@@ -35,6 +35,8 @@ depmod %{kversion}
 
 %install
 make KERNEL_VERSION=%{kversion} INSTALL_MOD_PATH="$RPM_BUILD_ROOT" modules_install
+make KERNEL_VERSION=%{kversion} HDR_INSTAL_PATH=$RPM_BUILD_ROOT/usr/include headers_install
+
 rm -rf "$RPM_BUILD_ROOT/lib/modules/%{kversion}/modules."*
 mkdir -p  "$RPM_BUILD_ROOT/usr/lib/modules-load.d"
 cp modules-load/tz_log.conf "$RPM_BUILD_ROOT/usr/lib/modules-load.d"
@@ -50,6 +52,7 @@ rm -rf $RPM_BUILD_ROOT
 /lib/modules/%{kversion}/extra/drivers/qtee_shmbridge.ko
 /lib/modules/%{kversion}/extra/drivers/smcinvoke.ko
 /lib/modules/%{kversion}/extra/drivers/qcom_scm_oot.ko
+%{_includedir}/linux/smcinvoke.h
 
 /usr/lib/modules-load.d/tz_log.conf
 /usr/lib/modules-load.d/qtee_shmbridge.conf
