@@ -455,15 +455,6 @@ static int qtee_shmbridge_init(struct platform_device *pdev)
 		goto exit_deregister_default_bridge;
 	}
 
-	pr_debug("qtee shmbridge registered default bridge with size %d bytes\n",
-			default_bridge.size);
-
-	ret = of_reserved_mem_device_init(&pdev->dev);
-	if (ret) {
-		dev_err(&pdev->dev, "Could not get memory-region from device tree\n");
-		goto exit_deregister_default_bridge;
-	}
-
 	pr_debug("qtee shmbridge registered default bridge with size %x bytes\n",
 		default_bridge.size);
 
@@ -471,15 +462,15 @@ static int qtee_shmbridge_init(struct platform_device *pdev)
 
 	mem_node = of_parse_phandle((&pdev->dev)->of_node, "memory-region", 0);
 	if (!mem_node) {
-		pr_info("%s: Could not parse memory region for DMA bridge\n", __func__);
+		pr_info("%s: Could not parse memory region for DMA bridge, skipping\n", __func__);
 		goto exit_success;
 	}
 
 	rmem = of_reserved_mem_lookup(mem_node);
 	of_node_put(mem_node);
 	if (!rmem) {
-		pr_err("%s: Failed to get rmem\n", __func__);
-		goto exit_deregister_default_bridge;
+		pr_info("%s: Failed to get memory-region node, skipping\n", __func__);
+		goto exit_success;
 	}
 
 	dma_bridge.paddr = rmem->base;
@@ -493,9 +484,9 @@ static int qtee_shmbridge_init(struct platform_device *pdev)
 	pr_debug("qtee shmbridge registered DMA bridge with size 0x%lx bytes, paddr=0x%lx\n",
 			dma_bridge.size, dma_bridge.paddr);
 
-exit_success:       	
- 	return 0;
- 
+exit_success:
+	return 0;
+
 exit_deregister_dma_bridge:
 	qtee_shmbridge_deregister(dma_bridge.handle);
 
