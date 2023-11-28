@@ -1538,6 +1538,12 @@ static int32_t smcinvoke_map_mem_region(void *buf, size_t buf_len)
 		kref_get(&mem_obj->mem_map_obj_ref_cnt);
 		mutex_unlock(&g_smcinvoke_lock);
 
+/* Avoid creating shmbridges in runtime, and rely on having DMA-buf
+ * heap pre-registered as shmbridge outside of this driver.
+ * This is a workaround to an issue where shmbridge creation calls
+ * hang in the HV. */
+#ifdef DMABUF_HEAP_NOT_PRE_REGISTERED
+
 		ret = smcinvoke_create_bridge(mem_obj);
 
 		/* Take lock again and decrease the reference count which we
@@ -1545,6 +1551,9 @@ static int32_t smcinvoke_map_mem_region(void *buf, size_t buf_len)
 		 * have to check again if the memobj is still valid or not
 		 * after decreasing the reference.
 		 */
+#else
+		ret = 0;
+#endif
 		mutex_lock(&g_smcinvoke_lock);
 		kref_put(&mem_obj->mem_map_obj_ref_cnt, del_mem_map_obj_locked);
 
@@ -2582,7 +2591,6 @@ static long process_invoke_req(struct file *filp, unsigned int cmd,
 			&req, args_buf, &tz_acked, context_type,
 			&in_shm, &out_shm);
 
-	 pr_err("after prepare, ret=%d\n", ret);
 	/*
 	 * If scm_call is success, TZ owns responsibility to release
 	 * refs for local objs.

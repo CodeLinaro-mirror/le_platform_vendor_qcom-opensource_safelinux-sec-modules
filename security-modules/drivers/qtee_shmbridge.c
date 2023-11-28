@@ -99,6 +99,7 @@ enum CMA_HEAP_TYPE {
 };
 
 static struct bridge_info default_bridge;
+static struct bridge_info dma_bridge;
 static struct bridge_list bridge_list_head;
 static bool qtee_shmbridge_enabled;
 static bool support_hyp;
@@ -367,6 +368,8 @@ static int qtee_shmbridge_init(struct platform_device *pdev)
 	uint32_t ns_vm_ids_hlos[] = {VMID_HLOS};
 	uint32_t ns_vm_ids_hyp[] = {};
 	uint32_t ns_vm_perms[] = {VM_PERM_R|VM_PERM_W};
+	struct device_node *mem_node;
+	struct reserved_mem *rmem;
 
 	support_hyp = of_property_read_bool((&pdev->dev)->of_node,
 			"qcom,support-hypervisor");
@@ -452,10 +455,40 @@ static int qtee_shmbridge_init(struct platform_device *pdev)
 		goto exit_deregister_default_bridge;
 	}
 
-	pr_debug("qtee shmbridge registered default bridge with size %d bytes\n",
-			default_bridge.size);
+	pr_debug("qtee shmbridge registered default bridge with size %x bytes\n",
+		default_bridge.size);
 
+	dma_bridge.handle = 0;
+
+	mem_node = of_parse_phandle((&pdev->dev)->of_node, "memory-region", 0);
+	if (!mem_node) {
+		pr_info("%s: Could not parse memory region for DMA bridge, skipping\n", __func__);
+		goto exit_success;
+	}
+
+	rmem = of_reserved_mem_lookup(mem_node);
+	of_node_put(mem_node);
+	if (!rmem) {
+		pr_info("%s: Failed to get memory-region node, skipping\n", __func__);
+		goto exit_success;
+	}
+
+	dma_bridge.paddr = rmem->base;
+	dma_bridge.size = rmem->size;
+
+	ret = qtee_shmbridge_register(dma_bridge.paddr,
+		dma_bridge.size, ns_vm_ids,
+		ns_vm_perms, 0, VM_PERM_R|VM_PERM_W,
+		&dma_bridge.handle);
+
+	pr_debug("qtee shmbridge registered DMA bridge with size 0x%lx bytes, paddr=0x%lx\n",
+			dma_bridge.size, dma_bridge.paddr);
+
+exit_success:
 	return 0;
+
+exit_deregister_dma_bridge:
+	qtee_shmbridge_deregister(dma_bridge.handle);
 
 exit_deregister_default_bridge:
 	qtee_shmbridge_deregister(default_bridge.handle);
@@ -483,6 +516,10 @@ static int qtee_shmbridge_probe(struct platform_device *pdev)
 static int qtee_shmbridge_remove(struct platform_device *pdev)
 {
 	qtee_shmbridge_deregister(default_bridge.handle);
+	if (dma_bridge.handle) {
+		qtee_shmbridge_deregister(dma_bridge.handle);
+	}
+
 	gen_pool_destroy(default_bridge.genpool);
 	dma_unmap_single(&pdev->dev, default_bridge.paddr, default_bridge.size,
 			DMA_TO_DEVICE);
