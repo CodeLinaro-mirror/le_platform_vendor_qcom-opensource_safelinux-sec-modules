@@ -1,0 +1,13 @@
+LINUXINCLUDE += -I$(SECURITY_MODULES_ROOT)/drivers
+
+obj-m += tz_log.o
+tz_log-objs := drivers/tz_log.o
+
+obj-m += qtee_shmbridge.o
+qtee_shmbridge-objs := drivers/qtee_shmbridge.o
+
+obj-m += qcom_scm_oot.o
+qcom_scm_oot-objs := drivers/qcom_scm_oot.o
+
+obj-m += smcinvoke.o
+smcinvoke-objs := drivers/smcinvoke.o
