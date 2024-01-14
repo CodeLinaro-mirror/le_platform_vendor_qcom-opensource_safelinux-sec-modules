@@ -10,6 +10,10 @@
 #include <linux/firmware/qcom/qcom_scm.h>
 #include "qcom_scm_oot.h"
 #include <linux/module.h>
+#include <linux/of_platform.h>
+
+static const char* scm_dev_name = "scm";
+static struct device *scm_dev = NULL;
 
 /* Calls needed to support qtee_shmbridge */
 
@@ -33,7 +37,7 @@ int qcom_scm_create_shm_bridge(u64 pfn_and_ns_perm_flags,
         desc.arginfo = QCOM_SCM_ARGS(4, QCOM_SCM_VAL, QCOM_SCM_VAL,
                                         QCOM_SCM_VAL, QCOM_SCM_VAL);
 
-        ret = qcom_scm_call(dev, &desc, &res);
+        ret = qcom_scm_call(scm_dev, &desc, &res);
 
         if (handle)
                 *handle = res.result[1];
@@ -56,7 +60,7 @@ static int qcom_scm_get_feat_version(struct device *dev, u64 feat_id, u64 *versi
         };
         struct qcom_scm_res res;
 
-        ret = qcom_scm_call(dev, &desc, &res);
+        ret = qcom_scm_call(scm_dev, &desc, &res);
         if (version)
                 *version = res.result[0];
         return ret;
@@ -64,13 +68,13 @@ static int qcom_scm_get_feat_version(struct device *dev, u64 feat_id, u64 *versi
 
 int qcom_scm_get_tz_log_feat_id(u64 *version, struct device *dev)
 {
-        return qcom_scm_get_feat_version(dev, QCOM_SCM_FEAT_LOG_ID, version);
+        return qcom_scm_get_feat_version(scm_dev, QCOM_SCM_FEAT_LOG_ID, version);
 }
 EXPORT_SYMBOL(qcom_scm_get_tz_log_feat_id);
 
 int qcom_scm_get_tz_feat_id_version(u64 feat_id, u64 *version, struct device *dev)
 {
-        return qcom_scm_get_feat_version(dev, feat_id, version);
+        return qcom_scm_get_feat_version(scm_dev, feat_id, version);
 }
 EXPORT_SYMBOL(qcom_scm_get_tz_feat_id_version);
 
@@ -87,7 +91,7 @@ int qcom_scm_register_qsee_log_buf(phys_addr_t buf, size_t len, struct device *d
         };
         struct qcom_scm_res res;
 
-        ret = qcom_scm_call(dev, &desc, &res);
+        ret = qcom_scm_call(scm_dev, &desc, &res);
 
         return ret ? : res.result[0];
 }
@@ -103,7 +107,7 @@ int qcom_scm_query_encrypted_log_feature(u64 *enabled, struct device *dev)
         };
         struct qcom_scm_res res;
 
-        ret = qcom_scm_call(dev, &desc, &res);
+        ret = qcom_scm_call(scm_dev, &desc, &res);
         if (enabled)
                 *enabled = res.result[0];
 
@@ -140,7 +144,7 @@ int qcom_scm_request_encrypted_log(phys_addr_t buf,
         } else {
                 desc.arginfo = QCOM_SCM_ARGS(3, QCOM_SCM_RW);
         }
-        ret = qcom_scm_call(dev, &desc, &res);
+        ret = qcom_scm_call(scm_dev, &desc, &res);
 
         return ret ? : res.result[0];
 }
@@ -167,7 +171,7 @@ int qcom_scm_invoke_smc_legacy(phys_addr_t in_buf, size_t in_buf_size,
 
 	struct qcom_scm_res res;
 
-	ret = qcom_scm_call(dev, &desc, &res);
+	ret = qcom_scm_call(scm_dev, &desc, &res);
 
 	if (result)
 		*result = res.result[1];
@@ -200,7 +204,7 @@ int qcom_scm_invoke_smc(phys_addr_t in_buf, size_t in_buf_size,
 	};
 	struct qcom_scm_res res;
 
-	ret = qcom_scm_call(dev, &desc, &res);
+	ret = qcom_scm_call(scm_dev, &desc, &res);
 
 	if (result)
 		*result = res.result[1];
@@ -230,7 +234,7 @@ int qcom_scm_invoke_callback_response(phys_addr_t out_buf,
 	};
 	struct qcom_scm_res res;
 
-	ret = qcom_scm_call(dev, &desc, &res);
+	ret = qcom_scm_call(scm_dev, &desc, &res);
 
 	if (result)
 		*result = res.result[1];
@@ -243,7 +247,38 @@ int qcom_scm_invoke_callback_response(phys_addr_t out_buf,
 
 	return ret;
 }
+
 EXPORT_SYMBOL(qcom_scm_invoke_callback_response);
+
+static int qcom_scm_oot_init(void)
+{
+	struct platform_device *pdev;
+	struct device_node* np;
+
+	np = of_find_node_by_name(NULL, scm_dev_name);
+	if (!np)
+	{
+		pr_err("Failed to find name of scm device\n");
+		return -ENODEV;
+	}
+	pdev = of_find_device_by_node(np);
+	if (!pdev)
+	{
+		pr_err("Failed to find scm platform device\n");
+		return -ENODEV;
+	}
+	scm_dev = &pdev->dev;
+
+	return 0;
+}
+
+static void qcom_scm_oot_exit(void)
+{
+	scm_dev = NULL;
+}
+
+module_init(qcom_scm_oot_init);
+module_exit(qcom_scm_oot_exit);
 
 MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("QCOM OOT SCM driver");
