@@ -4,6 +4,7 @@
  * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
+#include <linux/arm-smccc.h>
 #include <linux/types.h>
 #include <linux/kernel.h>
 #include <linux/device.h>

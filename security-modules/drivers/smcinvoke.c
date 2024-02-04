@@ -3024,7 +3024,7 @@ static int smcinvoke_probe(struct platform_device *pdev)
 		pr_err("chrdev_region failed %d for %s\n", rc, SMCINVOKE_DEV);
 		goto exit_destroy_wkthread;
 	}
-	driver_class = class_create(THIS_MODULE, SMCINVOKE_DEV);
+	driver_class = class_create(SMCINVOKE_DEV);
 	if (IS_ERR(driver_class)) {
 		rc = -ENOMEM;
 		pr_err("class_create failed %d\n", rc);
