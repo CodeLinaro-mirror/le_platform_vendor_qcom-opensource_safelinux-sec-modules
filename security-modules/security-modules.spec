@@ -1,6 +1,8 @@
 # If kversion isn't defined on the rpmbuild line, define it here.
 %{!?kversion: %define kversion %(uname -r)}
 
+%{!?with_oot_debug: %define with_oot_debug 0}
+
 %define kmod_name security-modules
 
 %define debug_package %{nil}
@@ -24,21 +26,42 @@ This is a rpm contains security out of tree kernel modules.
 %setup -qn %{name}
 
 %build
+%if %{with_oot_debug}
+KERNEL_SRC=%{_usrsrc}/kernels/%{kversion}+debug
+%else
 KERNEL_SRC=%{_usrsrc}/kernels/%{kversion}
+%endif
 make KDIR=${KERNEL_SRC} modules
 
 %post
+%if %{with_oot_debug}
+depmod %{kversion}+debug
+%else
 depmod %{kversion}
+%endif
 
 %postun
+%if %{with_oot_debug}
+depmod %{kversion}+debug
+%else
 depmod %{kversion}
+%endif
 
 %install
+%if %{with_oot_debug}
+KERNEL_SRC=%{_usrsrc}/kernels/%{kversion}+debug
+%else
 KERNEL_SRC=%{_usrsrc}/kernels/%{kversion}
+%endif
 make KDIR=${KERNEL_SRC} INSTALL_MOD_PATH=$RPM_BUILD_ROOT modules_install
 make KDIR=${KERNEL_SRC} HDR_INSTAL_PATH=$RPM_BUILD_ROOT/usr/include headers_install
 
+%if %{with_oot_debug}
+rm -rf "$RPM_BUILD_ROOT/lib/modules/%{kversion}+debug/modules."*
+%else
 rm -rf "$RPM_BUILD_ROOT/lib/modules/%{kversion}/modules."*
+%endif
+
 mkdir -p  "$RPM_BUILD_ROOT/usr/lib/modules-load.d"
 cp modules-load/tz_log.conf "$RPM_BUILD_ROOT/usr/lib/modules-load.d"
 cp modules-load/qtee_shmbridge.conf "$RPM_BUILD_ROOT/usr/lib/modules-load.d"
@@ -49,10 +72,16 @@ cp modules-load/smcinvoke.conf "$RPM_BUILD_ROOT/usr/lib/modules-load.d"
 rm -rf $RPM_BUILD_ROOT
 
 %files
-/lib/modules/%{kversion}/extra/tz_log.ko
-/lib/modules/%{kversion}/extra/qtee_shmbridge.ko
-/lib/modules/%{kversion}/extra/smcinvoke.ko
-/lib/modules/%{kversion}/extra/qcom_scm_oot.ko
+%if %{with_oot_debug}
+%define kernel_module_path /lib/modules/%{kversion}+debug
+%else
+%define kernel_module_path /lib/modules/%{kversion}
+%endif
+%{kernel_module_path}/extra/tz_log.ko
+%{kernel_module_path}/extra/qtee_shmbridge.ko
+%{kernel_module_path}/extra/smcinvoke.ko
+%{kernel_module_path}/extra/qcom_scm_oot.ko
+
 %{_includedir}/linux/smcinvoke.h
 
 /usr/lib/modules-load.d/tz_log.conf
