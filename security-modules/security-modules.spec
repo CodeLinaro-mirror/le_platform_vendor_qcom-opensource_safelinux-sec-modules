@@ -7,6 +7,14 @@
 
 %define debug_package %{nil}
 
+%if %{with_oot_debug}
+    %define kpackage kernel-automotive-debug
+    %define kversion_with_debug %{kversion}+debug
+%else
+    %define kpackage kernel-automotive
+    %define kversion_with_debug %{kversion}
+%endif
+
 Name: %{kmod_name}
 Version: 1.0
 Release:        1%{?dist}
@@ -16,8 +24,8 @@ License: GPLv2
 Source0: %{name}-%{version}.tar.gz
 
 BuildRequires: modules-signkey
-BuildRequires: kernel-automotive-devel-uname-r = %{kversion}
-Requires: kernel-automotive-core-uname-r = %{kversion}
+BuildRequires: kernel-automotive-devel-uname-r = %{kversion_with_debug}
+Requires: %{kpackage}-core-uname-r = %{kversion_with_debug}
 
 %description
 This is a rpm contains security out of tree kernel modules.
@@ -26,41 +34,20 @@ This is a rpm contains security out of tree kernel modules.
 %setup -qn %{name}
 
 %build
-%if %{with_oot_debug}
-KERNEL_SRC=%{_usrsrc}/kernels/%{kversion}+debug
-%else
-KERNEL_SRC=%{_usrsrc}/kernels/%{kversion}
-%endif
+KERNEL_SRC=%{_usrsrc}/kernels/%{kversion_with_debug}
 make KDIR=${KERNEL_SRC} modules
 
 %post
-%if %{with_oot_debug}
-depmod %{kversion}+debug
-%else
-depmod %{kversion}
-%endif
+depmod %{kversion_with_debug}
 
 %postun
-%if %{with_oot_debug}
-depmod %{kversion}+debug
-%else
-depmod %{kversion}
-%endif
+depmod %{kversion_with_debug}
 
 %install
-%if %{with_oot_debug}
-KERNEL_SRC=%{_usrsrc}/kernels/%{kversion}+debug
-%else
-KERNEL_SRC=%{_usrsrc}/kernels/%{kversion}
-%endif
+KERNEL_SRC=%{_usrsrc}/kernels/%{kversion_with_debug}
 make KDIR=${KERNEL_SRC} INSTALL_MOD_PATH=$RPM_BUILD_ROOT modules_install
 make KDIR=${KERNEL_SRC} HDR_INSTAL_PATH=$RPM_BUILD_ROOT/usr/include headers_install
-
-%if %{with_oot_debug}
-rm -rf "$RPM_BUILD_ROOT/lib/modules/%{kversion}+debug/modules."*
-%else
-rm -rf "$RPM_BUILD_ROOT/lib/modules/%{kversion}/modules."*
-%endif
+rm -rf "$RPM_BUILD_ROOT/lib/modules/%{kversion_with_debug}/modules."*
 
 mkdir -p  "$RPM_BUILD_ROOT/usr/lib/modules-load.d"
 cp modules-load/tz_log.conf "$RPM_BUILD_ROOT/usr/lib/modules-load.d"
@@ -72,11 +59,7 @@ cp modules-load/smcinvoke.conf "$RPM_BUILD_ROOT/usr/lib/modules-load.d"
 rm -rf $RPM_BUILD_ROOT
 
 %files
-%if %{with_oot_debug}
-%define kernel_module_path /lib/modules/%{kversion}+debug
-%else
-%define kernel_module_path /lib/modules/%{kversion}
-%endif
+%define kernel_module_path /lib/modules/%{kversion_with_debug}
 %{kernel_module_path}/extra/tz_log.ko
 %{kernel_module_path}/extra/qtee_shmbridge.ko
 %{kernel_module_path}/extra/smcinvoke.ko
