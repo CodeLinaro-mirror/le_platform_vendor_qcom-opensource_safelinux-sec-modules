@@ -13,7 +13,7 @@
 #include <linux/module.h>
 #include <linux/of_platform.h>
 
-static const char* scm_dev_name = "scm";
+static const char* scm_dev_name = "qcom_scm";
 static struct device *scm_dev = NULL;
 
 /* Calls needed to support qtee_shmbridge */
