@@ -50,10 +50,12 @@ make KDIR=${KERNEL_SRC} HDR_INSTAL_PATH=$RPM_BUILD_ROOT/usr/include headers_inst
 rm -rf "$RPM_BUILD_ROOT/lib/modules/%{kversion_with_debug}/modules."*
 
 mkdir -p  "$RPM_BUILD_ROOT/usr/lib/modules-load.d"
+mkdir -p  "$RPM_BUILD_ROOT/usr/lib/security-modules-symbol"
 cp modules-load/tz_log.conf "$RPM_BUILD_ROOT/usr/lib/modules-load.d"
 cp modules-load/qtee_shmbridge.conf "$RPM_BUILD_ROOT/usr/lib/modules-load.d"
 cp modules-load/qcom_scm_oot.conf "$RPM_BUILD_ROOT/usr/lib/modules-load.d"
 cp modules-load/smcinvoke.conf "$RPM_BUILD_ROOT/usr/lib/modules-load.d"
+cp Module.symvers "$RPM_BUILD_ROOT/usr/lib/security-modules-symbol"
 
 %clean
 rm -rf $RPM_BUILD_ROOT
@@ -71,6 +73,7 @@ rm -rf $RPM_BUILD_ROOT
 /usr/lib/modules-load.d/qtee_shmbridge.conf
 /usr/lib/modules-load.d/smcinvoke.conf
 /usr/lib/modules-load.d/qcom_scm_oot.conf
+/usr/lib/security-modules-symbol/Module.symvers
 
 %changelog
 * Thu Sep 28 2023 Amit Blay <quic_ablay@quicinc.com> 1.0
