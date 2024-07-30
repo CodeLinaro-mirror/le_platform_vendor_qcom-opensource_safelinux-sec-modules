@@ -35,7 +35,7 @@ This is a rpm contains security out of tree kernel modules.
 
 %build
 KERNEL_SRC=%{_usrsrc}/kernels/%{kversion_with_debug}
-make KDIR=${KERNEL_SRC} modules
+make KDIR=${KERNEL_SRC} SECURITY_MODULES_SYSROOT_INC=$RPM_BUILD_ROOT/usr/include modules
 
 %post
 depmod %{kversion_with_debug}
@@ -66,6 +66,7 @@ rm -rf $RPM_BUILD_ROOT
 %{kernel_module_path}/extra/qtee_shmbridge.ko
 %{kernel_module_path}/extra/smcinvoke.ko
 %{kernel_module_path}/extra/qcom_scm_oot.ko
+%{kernel_module_path}/extra/scm_user_intf_sec.ko
 
 %{_includedir}/linux/smcinvoke.h
 
