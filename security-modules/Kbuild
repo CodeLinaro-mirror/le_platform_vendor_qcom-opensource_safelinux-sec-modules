@@ -1,4 +1,5 @@
-LINUXINCLUDE += -I$(SECURITY_MODULES_ROOT)/drivers
+LINUXINCLUDE += -I$(SECURITY_MODULES_ROOT)/include
+ccflags-y += -I$(SECURITY_MODULES_SYSROOT_INC)
 
 obj-m += tz_log.o
 tz_log-objs := drivers/tz_log.o
@@ -11,3 +12,9 @@ qcom_scm_oot-objs := drivers/qcom_scm_oot.o
 
 obj-m += smcinvoke.o
 smcinvoke-objs := drivers/smcinvoke.o
+
+obj-m += scm_user_intf_sec.o
+ifneq ($(KERNELRELEASE), "5.14.0")
+ccflags-y += -I$(KERNEL_SRC)/drivers/firmware
+endif
+scm_user_intf_sec-objs := drivers/scm_user_intf_sec.o
