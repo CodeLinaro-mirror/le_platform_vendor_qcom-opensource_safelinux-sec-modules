@@ -1,6 +1,7 @@
 LINUXINCLUDE += -I$(SECURITY_MODULES_ROOT)/include
 ccflags-y += -I$(SECURITY_MODULES_SYSROOT_INC)
 
+ifeq ($(KERNELRELEASE), "5.14.0")
 obj-m += tz_log.o
 tz_log-objs := drivers/tz_log.o
 
@@ -12,6 +13,7 @@ qcom_scm_oot-objs := drivers/qcom_scm_oot.o
 
 obj-m += smcinvoke.o
 smcinvoke-objs := drivers/smcinvoke.o
+endif
 
 obj-m += scm_user_intf_sec.o
 ifneq ($(KERNELRELEASE), "5.14.0")
