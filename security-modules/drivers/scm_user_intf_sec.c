@@ -381,7 +381,7 @@ static long scm_smcinvoke_ioctl(struct file *file, unsigned int cmd, unsigned lo
 
 #if (LINUX_VERSION_CODE != KERNEL_VERSION(5, 14, 0))
 	if (scm_data.cmd == QCOM_SCM_SMCINVOKE) {
-		scm_data.ret = qcom_scm_invoke_smc(in_buf, in_buf_size, out_buf, out_buf_size, &res.result[1], &res.result[0], &res.result[2]);
+		scm_data.ret = qcom_scm_invoke_smc(in_buf, in_buf_size, out_buf, out_buf_size, (int32_t *)&res.result[1], &res.result[0], (unsigned int *)res.result[2]);
 	} else if (scm_data.cmd == QCOM_SCM_SMCINVOKE_CB_RESP) {
 		ret = scm_user_intf_dmabuf_map(dmabuf_fd, &dma_buf_info);
 		if (ret) {
@@ -397,7 +397,7 @@ static long scm_smcinvoke_ioctl(struct file *file, unsigned int cmd, unsigned lo
 			return ret;
 		}
 
-		scm_data.ret = qcom_scm_invoke_callback_response(out_buf, out_buf_size, &res.result[1], &res.result[0], &res.result[2]);
+		scm_data.ret = qcom_scm_invoke_callback_response(out_buf, out_buf_size, (int32_t *)&res.result[1], &res.result[0], (unsigned int *)&res.result[2]);
 	} else {
 		return -EFAULT;
 	}
