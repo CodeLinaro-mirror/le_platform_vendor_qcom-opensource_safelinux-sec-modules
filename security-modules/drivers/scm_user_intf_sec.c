@@ -9,9 +9,11 @@
 #include <linux/of.h>
 #include <linux/of_address.h>
 #include <linux/of_platform.h>
+#include <linux/of_reserved_mem.h>
 #include <linux/platform_device.h>
 #include <linux/types.h>
 #include <linux/firmware/qcom/qcom_scm.h>
+#include <linux/firmware/qcom/qcom_tzmem.h>
 #include <linux/dma-buf.h>
 #include <linux/version.h>
 #include <uapi/misc/scm_user_intf.h>
@@ -77,8 +79,9 @@ typedef struct {
 	u64 len;
 } mem_obj_buffer_info_t;
 
-static struct scm_dev_data *__scm_dev;
+static struct scm_dev_data *__scm_dev = NULL;
 static const char* scm_dev_name = "qcom_scm";
+static u64 g_tzmem_handle = 0;
 
 /*
  * SVC/ Cmd ID pair that needs DMA buf fd to PA translation
@@ -499,9 +502,14 @@ static int qcom_scm_get_scm_drvdata(void **scm_drvdata)
 
 static int qcom_scm_intf_probe(struct platform_device *pdev)
 {
-	struct device *dev = &pdev->dev;
+	uint32_t ns_vm_perms[] = {QCOM_SCM_PERM_RW};
+	uint32_t ns_vmids[] = {QCOM_SCM_VMID_HLOS};
 	struct scm_dev_data *dev_data = NULL;
+	struct device_node *mem_node = NULL;
+	struct reserved_mem *rmem = NULL;
+	struct device *dev = &pdev->dev;
 	static void *scm_drvdata = NULL;
+	uint32_t ns_vmid_num = 1;
 	int ret = 0;
 
 	dev_data = devm_kzalloc(dev, sizeof(struct scm_dev_data), GFP_KERNEL);
@@ -537,6 +545,34 @@ static int qcom_scm_intf_probe(struct platform_device *pdev)
 	}
 	platform_set_drvdata(pdev, scm_drvdata);
 
+
+	/*
+	 * Register the tzcom heap in tzmem.
+	 * In case memory-region is not found it means that the registration
+	 * is done somewhere else.
+	 */
+	mem_node = of_parse_phandle(dev->of_node, "memory-region", 0);
+	if (mem_node) {
+		rmem = of_reserved_mem_lookup(mem_node);
+		of_node_put(mem_node);
+		if (!rmem) {
+			dev_err(dev, "%s: Failed to get memory-region node\n", __func__);
+			return -EINVAL;
+		}
+
+		ret = qcom_tzmem_register(rmem->base,
+				   rmem->size,
+				   ns_vmids,
+				   ns_vm_perms,
+				   ns_vmid_num,
+				   QCOM_SCM_PERM_RW,
+				   &g_tzmem_handle);
+		if (ret) {
+			dev_err(dev, "%s: Failed to tzmem register. err %d\n", __func__, ret);
+			return ret;
+		}
+	}
+
 	return 0;
 }
 
@@ -544,8 +580,13 @@ static int qcom_scm_intf_remove(struct platform_device *pdev)
 {
 	struct scm_dev_data *dev_data = platform_get_drvdata(pdev);
 
+	if (g_tzmem_handle) {
+		qcom_tzmem_deregister(g_tzmem_handle);
+	}
+
 	put_device(dev_data->dev);
 	misc_deregister(&dev_data->scm_miscdev);
+
 	return 0;
 }
 
