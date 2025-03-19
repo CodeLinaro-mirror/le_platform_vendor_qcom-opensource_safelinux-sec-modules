@@ -8,6 +8,8 @@
 #define __QCOM_SCM_OOT_H__
 
 /* qtee_shmbridge */
+#define QCOM_SCM_MEMP_SHM_BRIDGE_ENABLE         0x1c
+#define QCOM_SCM_MEMP_SHM_BRIDGE_DELETE         0x1d
 #define QCOM_SCM_MEMP_SHM_BRDIGE_CREATE         0x1e
 
 /* tz_log */
@@ -51,6 +53,9 @@ enum qcom_scm_arg_types {
 extern int qcom_scm_create_shm_bridge(u64 pfn_and_ns_perm_flags,
  			u64 ipfn_and_s_perm_flags, u64 size_and_flags,
  			u64 ns_vmids, u64 *handle, struct device *dev);
+
+extern int qcom_scm_enable_shm_bridge(void);
+extern int qcom_scm_delete_shm_bridge(u64 handle);
 
 extern int qcom_scm_get_tz_log_feat_id(u64 *version, struct device *dev);
 
