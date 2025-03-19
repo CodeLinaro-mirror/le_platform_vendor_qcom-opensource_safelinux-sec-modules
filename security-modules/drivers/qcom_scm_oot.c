@@ -17,6 +17,35 @@ static const char* scm_dev_name = "qcom_scm";
 static struct device *scm_dev = NULL;
 
 /* Calls needed to support qtee_shmbridge */
+int qcom_scm_enable_shm_bridge(void)
+{
+	int ret;
+	struct qcom_scm_desc desc = {
+		.svc = QCOM_SCM_SVC_MP,
+		.cmd = QCOM_SCM_MEMP_SHM_BRIDGE_ENABLE,
+		.owner = ARM_SMCCC_OWNER_SIP
+	};
+	struct qcom_scm_res res;
+
+    ret = qcom_scm_call(scm_dev, &desc, &res);
+
+	return ret ? : res.result[0];
+}
+EXPORT_SYMBOL_GPL(qcom_scm_enable_shm_bridge);
+
+int qcom_scm_delete_shm_bridge(u64 handle)
+{
+	struct qcom_scm_desc desc = {
+		.svc = QCOM_SCM_SVC_MP,
+		.cmd = QCOM_SCM_MEMP_SHM_BRIDGE_DELETE,
+		.owner = ARM_SMCCC_OWNER_SIP,
+		.args[0] = handle,
+		.arginfo = QCOM_SCM_ARGS(1, QCOM_SCM_VAL),
+	};
+
+    return qcom_scm_call(scm_dev, &desc, NULL);
+}
+EXPORT_SYMBOL_GPL(qcom_scm_delete_shm_bridge);
 
 int qcom_scm_create_shm_bridge(u64 pfn_and_ns_perm_flags,
                         u64 ipfn_and_s_perm_flags, u64 size_and_flags,
