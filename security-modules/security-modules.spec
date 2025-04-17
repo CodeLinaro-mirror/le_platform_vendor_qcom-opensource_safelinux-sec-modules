@@ -35,7 +35,7 @@ This is a rpm contains security out of tree kernel modules.
 
 %build
 KERNEL_SRC=%{_usrsrc}/kernels/%{kversion_with_debug}
-make KDIR=${KERNEL_SRC} SECURITY_MODULES_SYSROOT_INC=$RPM_BUILD_ROOT/usr/include modules
+make EXTRA_CFLAGS="-DCONFIG_SAFELINUX_KERNEL" KDIR=${KERNEL_SRC} SECURITY_MODULES_SYSROOT_INC=$RPM_BUILD_ROOT/usr/include modules
 
 %post
 depmod %{kversion_with_debug}

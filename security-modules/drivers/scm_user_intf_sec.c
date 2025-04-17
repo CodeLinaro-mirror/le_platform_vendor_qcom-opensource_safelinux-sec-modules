@@ -546,6 +546,7 @@ static int qcom_scm_intf_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, scm_drvdata);
 
 
+#ifndef CONFIG_SAFELINUX_KERNEL
 	/*
 	 * Register the tzcom heap in tzmem.
 	 * In case memory-region is not found it means that the registration
@@ -572,6 +573,7 @@ static int qcom_scm_intf_probe(struct platform_device *pdev)
 			return ret;
 		}
 	}
+#endif
 
 	return 0;
 }
@@ -580,9 +582,11 @@ static int qcom_scm_intf_remove(struct platform_device *pdev)
 {
 	struct scm_dev_data *dev_data = platform_get_drvdata(pdev);
 
+#ifndef CONFIG_SAFELINUX_KERNEL
 	if (g_tzmem_handle) {
 		qcom_tzmem_deregister(g_tzmem_handle);
 	}
+#endif
 
 	put_device(dev_data->dev);
 	misc_deregister(&dev_data->scm_miscdev);
