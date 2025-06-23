@@ -512,6 +512,9 @@ static int qcom_scm_intf_probe(struct platform_device *pdev)
 	uint32_t ns_vmid_num = 1;
 	int ret = 0;
 
+	if (!qcom_scm_is_available())
+		return dev_err_probe(dev_data->dev, -EPROBE_DEFER, "qcom_scm is not up!\n");
+
 	dev_data = devm_kzalloc(dev, sizeof(struct scm_dev_data), GFP_KERNEL);
 	if (!dev_data)
 		return -ENOMEM;
@@ -532,15 +535,13 @@ static int qcom_scm_intf_probe(struct platform_device *pdev)
 	__scm_dev = dev_data;
 	__scm_dev->dev = dev_data->dev;
 
-	if (!qcom_scm_is_available())
-		dev_err_probe(dev_data->dev, -EPROBE_DEFER, "qcom_scm is not up!\n");
-
 	/* Set the drvdata to be the same as the scm drvdata, which is expected by the
 	 * ADCI mechanism.
 	 */
 	ret = qcom_scm_get_scm_drvdata(&scm_drvdata);
 	if (ret) {
 		dev_err(dev, "failed to get scm drvdata. err %d\n", ret);
+		misc_deregister(&dev_data->scm_miscdev);
 		return ret;
 	}
 	platform_set_drvdata(pdev, scm_drvdata);
@@ -558,6 +559,7 @@ static int qcom_scm_intf_probe(struct platform_device *pdev)
 		of_node_put(mem_node);
 		if (!rmem) {
 			dev_err(dev, "%s: Failed to get memory-region node\n", __func__);
+			misc_deregister(&dev_data->scm_miscdev);
 			return -EINVAL;
 		}
 
@@ -570,6 +572,7 @@ static int qcom_scm_intf_probe(struct platform_device *pdev)
 				   &g_tzmem_handle);
 		if (ret) {
 			dev_err(dev, "%s: Failed to tzmem register. err %d\n", __func__, ret);
+			misc_deregister(&dev_data->scm_miscdev);
 			return ret;
 		}
 	}
@@ -580,7 +583,7 @@ static int qcom_scm_intf_probe(struct platform_device *pdev)
 
 static int qcom_scm_intf_remove(struct platform_device *pdev)
 {
-	struct scm_dev_data *dev_data = platform_get_drvdata(pdev);
+	struct scm_dev_data *dev_data = __scm_dev;
 
 #ifndef CONFIG_SAFELINUX_KERNEL
 	if (g_tzmem_handle) {
@@ -588,7 +591,6 @@ static int qcom_scm_intf_remove(struct platform_device *pdev)
 	}
 #endif
 
-	put_device(dev_data->dev);
 	misc_deregister(&dev_data->scm_miscdev);
 
 	return 0;
