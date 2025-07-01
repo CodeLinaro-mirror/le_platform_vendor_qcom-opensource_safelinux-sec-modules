@@ -448,11 +448,6 @@ static long scm_smcinvoke_ioctl(struct file *file, unsigned int cmd, unsigned lo
 		scm_data.qcom_scm_res[i] = res.result[i];
 	}
 
-	if (scm_data.cmd == QCOM_SCM_SMCINVOKE_CB_RESP) {
-		scm_smcinvoke_memobj_clear_paddr(&scm_data, &dma_buf_info);
-		scm_user_intf_dmabuf_unmap(&dma_buf_info);
-	}
-
 	if (copy_to_user(ip, &scm_data, sizeof(struct scm_hand_shake))) {
 		return -EFAULT;
 	}
