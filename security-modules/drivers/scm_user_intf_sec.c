@@ -508,7 +508,13 @@ static int qcom_scm_intf_probe(struct platform_device *pdev)
 	int ret = 0;
 
 	if (!qcom_scm_is_available())
-		return dev_err_probe(dev_data->dev, -EPROBE_DEFER, "qcom_scm is not up!\n");
+		return dev_err_probe(dev, -EPROBE_DEFER, "qcom_scm is not up!\n");
+
+	ret = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(64));
+	if (ret) {
+		dev_err(dev, "dma_set_mask_and_coherent failed %d\n", ret);
+		return ret;
+	}
 
 	dev_data = devm_kzalloc(dev, sizeof(struct scm_dev_data), GFP_KERNEL);
 	if (!dev_data)
