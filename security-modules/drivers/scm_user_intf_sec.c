@@ -448,11 +448,6 @@ static long scm_smcinvoke_ioctl(struct file *file, unsigned int cmd, unsigned lo
 		scm_data.qcom_scm_res[i] = res.result[i];
 	}
 
-	if (scm_data.cmd == QCOM_SCM_SMCINVOKE_CB_RESP) {
-		scm_smcinvoke_memobj_clear_paddr(&scm_data, &dma_buf_info);
-		scm_user_intf_dmabuf_unmap(&dma_buf_info);
-	}
-
 	if (copy_to_user(ip, &scm_data, sizeof(struct scm_hand_shake))) {
 		return -EFAULT;
 	}
@@ -512,6 +507,15 @@ static int qcom_scm_intf_probe(struct platform_device *pdev)
 	uint32_t ns_vmid_num = 1;
 	int ret = 0;
 
+	if (!qcom_scm_is_available())
+		return dev_err_probe(dev, -EPROBE_DEFER, "qcom_scm is not up!\n");
+
+	ret = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(64));
+	if (ret) {
+		dev_err(dev, "dma_set_mask_and_coherent failed %d\n", ret);
+		return ret;
+	}
+
 	dev_data = devm_kzalloc(dev, sizeof(struct scm_dev_data), GFP_KERNEL);
 	if (!dev_data)
 		return -ENOMEM;
@@ -532,20 +536,19 @@ static int qcom_scm_intf_probe(struct platform_device *pdev)
 	__scm_dev = dev_data;
 	__scm_dev->dev = dev_data->dev;
 
-	if (!qcom_scm_is_available())
-		dev_err_probe(dev_data->dev, -EPROBE_DEFER, "qcom_scm is not up!\n");
-
 	/* Set the drvdata to be the same as the scm drvdata, which is expected by the
 	 * ADCI mechanism.
 	 */
 	ret = qcom_scm_get_scm_drvdata(&scm_drvdata);
 	if (ret) {
 		dev_err(dev, "failed to get scm drvdata. err %d\n", ret);
+		misc_deregister(&dev_data->scm_miscdev);
 		return ret;
 	}
 	platform_set_drvdata(pdev, scm_drvdata);
 
 
+#ifndef CONFIG_SAFELINUX_KERNEL
 	/*
 	 * Register the tzcom heap in tzmem.
 	 * In case memory-region is not found it means that the registration
@@ -557,6 +560,7 @@ static int qcom_scm_intf_probe(struct platform_device *pdev)
 		of_node_put(mem_node);
 		if (!rmem) {
 			dev_err(dev, "%s: Failed to get memory-region node\n", __func__);
+			misc_deregister(&dev_data->scm_miscdev);
 			return -EINVAL;
 		}
 
@@ -569,22 +573,25 @@ static int qcom_scm_intf_probe(struct platform_device *pdev)
 				   &g_tzmem_handle);
 		if (ret) {
 			dev_err(dev, "%s: Failed to tzmem register. err %d\n", __func__, ret);
+			misc_deregister(&dev_data->scm_miscdev);
 			return ret;
 		}
 	}
+#endif
 
 	return 0;
 }
 
 static int qcom_scm_intf_remove(struct platform_device *pdev)
 {
-	struct scm_dev_data *dev_data = platform_get_drvdata(pdev);
+	struct scm_dev_data *dev_data = __scm_dev;
 
+#ifndef CONFIG_SAFELINUX_KERNEL
 	if (g_tzmem_handle) {
 		qcom_tzmem_deregister(g_tzmem_handle);
 	}
+#endif
 
-	put_device(dev_data->dev);
 	misc_deregister(&dev_data->scm_miscdev);
 
 	return 0;

@@ -1,22 +1,22 @@
 LINUXINCLUDE += -I$(SECURITY_MODULES_ROOT)/include
 ccflags-y += -I$(SECURITY_MODULES_SYSROOT_INC)
-
-ifeq ($(KERNELRELEASE), "5.14.0")
-obj-m += tz_log.o
-tz_log-objs := drivers/tz_log.o
-
-obj-m += qtee_shmbridge.o
-qtee_shmbridge-objs := drivers/qtee_shmbridge.o
-
-obj-m += qcom_scm_oot.o
-qcom_scm_oot-objs := drivers/qcom_scm_oot.o
-
-obj-m += smcinvoke.o
-smcinvoke-objs := drivers/smcinvoke.o
+ifneq ($(findstring 5.14.0,$(KERNELRELEASE)),)
+	obj-m += tz_log.o
+	tz_log-objs := drivers/tz_log.o
+	obj-m += qtee_shmbridge.o
+	qtee_shmbridge-objs := drivers/qtee_shmbridge.o
+	obj-m += qcom_scm_oot.o
+	qcom_scm_oot-objs := drivers/qcom_scm_oot.o
+	obj-m += smcinvoke.o
+	smcinvoke-objs := drivers/smcinvoke.o
 endif
 
 obj-m += scm_user_intf_sec.o
-ifneq ($(KERNELRELEASE), "5.14.0")
-ccflags-y += -I$(KERNEL_SRC)/drivers/firmware
+
+ifeq ($(findstring 5.14.0,$(KERNELRELEASE)),)
+	ccflags-y += -I$(KERNEL_SRC)/drivers/firmware
 endif
 scm_user_intf_sec-objs := drivers/scm_user_intf_sec.o
+
+obj-m += tz_ffi.o
+tz_ffi-objs := drivers/tz_ffi.o drivers/crc8.o
