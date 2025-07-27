@@ -401,6 +401,7 @@ static long scm_smcinvoke_ioctl(struct file *file, unsigned int cmd, unsigned lo
 		}
 
 		scm_data.ret = qcom_scm_invoke_callback_response(out_buf, out_buf_size, (int32_t *)&res.result[1], &res.result[0], (unsigned int *)&res.result[2]);
+		scm_user_intf_dmabuf_unmap(&dma_buf_info);
 	} else {
 		return -EFAULT;
 	}
@@ -432,6 +433,7 @@ static long scm_smcinvoke_ioctl(struct file *file, unsigned int cmd, unsigned lo
 			scm_user_intf_dmabuf_unmap(&dma_buf_info);
 			return ret;
 		}
+		scm_user_intf_dmabuf_unmap(&dma_buf_info);
 	} else {
 		return -EFAULT;
 	}
