@@ -17,3 +17,6 @@ ifeq ($(findstring 5.14.0,$(KERNELRELEASE)),)
 	ccflags-y += -I$(KERNEL_SRC)/drivers/firmware
 endif
 scm_user_intf_sec-objs := drivers/scm_user_intf_sec.o
+
+obj-m += tz_ffi.o
+tz_ffi-objs := drivers/tz_ffi.o drivers/crc8.o
