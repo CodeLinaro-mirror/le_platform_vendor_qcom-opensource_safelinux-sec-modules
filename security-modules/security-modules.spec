@@ -55,6 +55,7 @@ cp modules-load/tz_log.conf "$RPM_BUILD_ROOT/usr/lib/modules-load.d"
 cp modules-load/qtee_shmbridge.conf "$RPM_BUILD_ROOT/usr/lib/modules-load.d"
 cp modules-load/qcom_scm_oot.conf "$RPM_BUILD_ROOT/usr/lib/modules-load.d"
 cp modules-load/smcinvoke.conf "$RPM_BUILD_ROOT/usr/lib/modules-load.d"
+cp modules-load/dice_vm.conf "$RPM_BUILD_ROOT/usr/lib/modules-load.d"
 cp Module.symvers "$RPM_BUILD_ROOT/usr/lib/security-modules-symbol"
 
 %clean
@@ -67,6 +68,7 @@ rm -rf $RPM_BUILD_ROOT
 %{kernel_module_path}/extra/smcinvoke.ko
 %{kernel_module_path}/extra/qcom_scm_oot.ko
 %{kernel_module_path}/extra/scm_user_intf_sec.ko
+%{kernel_module_path}/extra/dice_vm.ko
 
 %{_includedir}/linux/smcinvoke.h
 
@@ -74,6 +76,7 @@ rm -rf $RPM_BUILD_ROOT
 /usr/lib/modules-load.d/qtee_shmbridge.conf
 /usr/lib/modules-load.d/smcinvoke.conf
 /usr/lib/modules-load.d/qcom_scm_oot.conf
+/usr/lib/modules-load.d/dice_vm.conf
 /usr/lib/security-modules-symbol/Module.symvers
 
 %changelog

@@ -4,9 +4,12 @@ KBUILD_OPTIONS += SECURITY_MODULES_ROOT=$(SECURITY_MODULES_ROOT)
 
 HDR_INSTAL_PATH ?= $(KDIR)/usr/include
 INSTALL_HDR=$(shell mkdir -p $(HDR_INSTAL_PATH)/linux; \
+			 mkdir -p $(HDR_INSTAL_PATH)/uapi/misc; \
 			 cd $(KDIR);  \
 			 $(KDIR)/scripts/headers_install.sh \
 			 $(PWD)/drivers/smcinvoke.h $(HDR_INSTAL_PATH)/linux/smcinvoke.h; \
+			 $(KDIR)/scripts/headers_install.sh \
+			 $(PWD)/include/uapi/misc/dice_vm.h $(HDR_INSTAL_PATH)/uapi/misc/dice_vm.h; \
 			 [ -f $(HDR_INSTAL_PATH)/linux/smcinvoke.h ] && echo "passed" || echo "failed")
 
 all: clean modules
