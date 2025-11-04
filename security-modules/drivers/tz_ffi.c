@@ -75,7 +75,7 @@ static int get_mem_info_actual_size(struct device *dev, mem_info_t *mem_info, si
 	}
 
 	uint32_t reduction = unused_entries * sizeof(mem_entry_t);
-	if (reduction > sizeof(mem_info)) {
+	if (reduction > sizeof(*mem_info)) {
 		dev_err(dev, "Too many unused ranges %u, multiplication would overflow\n",
 				unused_entries);
 		return -EINVAL;
@@ -244,8 +244,9 @@ static int get_gvm_mem_info(struct device *dev, mem_info_t *mem_info)
 				tzcom_entry->mem_addr = res.start;
 				tzcom_entry->mem_size = resource_size(&res);
 				++mem_info->mem_list_count;
+				++entry_index;
 
-				dev_err(dev, "GVM memory-region %d: base = 0x%llx, size = 0x%llx\n", i, res.start, resource_size(&res));
+				dev_info(dev, "GVM memory-region %d: base = 0x%llx, size = 0x%llx\n", i, res.start, resource_size(&res));
 				of_node_put(mem_np);
 			}
 		}
@@ -297,8 +298,7 @@ static int smc_tz_safety_enable_ffi(struct device *dev, phys_addr_t mem_info_pad
 {
 	int ret = 0;
 
-	// FIXME: Need to uncomment this API once it's working
-	// ret = qcom_scm_tz_safety_enable_ffi(mem_info_paddr, size, crc8);
+	ret = qcom_scm_tz_safety_enable_ffi(mem_info_paddr, size, crc8);
 	if (ret) {
 		dev_err(dev, "Failed to enable TZ FFI, ret=%d\n", ret);
 	}
