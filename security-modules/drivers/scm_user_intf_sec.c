@@ -441,17 +441,17 @@ static long scm_smcinvoke_ioctl(struct file *file, unsigned int cmd, unsigned lo
 	scm_data.ret = qcom_scm_call(__scm_dev->dev, &desc, &res);
 #endif
 
-	if (scm_data.ret) {
-		dev_err(__scm_dev->dev, "scm smcinvoke ioctl failed - ret : %d\n", scm_data.ret);
-		return scm_data.ret;
-	}
-
 	for (i = 0; i < MAX_QCOM_SCM_RETS; i++) {
 		scm_data.qcom_scm_res[i] = res.result[i];
 	}
 
 	if (copy_to_user(ip, &scm_data, sizeof(struct scm_hand_shake))) {
 		return -EFAULT;
+	}
+
+	if (scm_data.ret) {
+		dev_err(__scm_dev->dev, "scm smcinvoke ioctl failed - ret : %d\n", scm_data.ret);
+		return scm_data.ret;
 	}
 
 	return ret;
