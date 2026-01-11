@@ -200,6 +200,52 @@ static int get_tzcom_mem_info(struct device *dev, mem_info_t *mem_info)
 	return 0;
 }
 
+/* Get memory information for the dump heap from DeviceTree */
+static int get_dump_mem_info(struct device *dev, mem_info_t *mem_info)
+{
+	uint32_t entry_index = mem_info->mem_list_count;
+	struct device_node *mem_dump_np = NULL;
+	struct device_node *memory_region_np = NULL;
+	struct reserved_mem *rmem = NULL;
+	mem_entry_t *mem_dump_entry = NULL;
+
+	if (entry_index == TZ_FFI_NUM_RANGES) {
+		dev_err(dev, "Too many ranges, index %u equals tz_ffi_num_ranges %u\n",
+				entry_index, TZ_FFI_NUM_RANGES);
+		return -EINVAL;
+	}
+
+	mem_dump_np = of_find_compatible_node(NULL, NULL, "qcom,mem-dump");
+	if (!mem_dump_np) {
+		dev_err(dev, "Failed to find qcom,mem-dump node\n");
+		return -ENODEV;
+	}
+
+	memory_region_np = of_parse_phandle(mem_dump_np, "memory-region", 0);
+	if (!memory_region_np) {
+		dev_err(dev, "No memory-region specified under qcom,mem-dump node\n");
+		of_node_put(mem_dump_np);
+		return -ENODEV;
+	}
+
+	rmem = of_reserved_mem_lookup(memory_region_np);
+	of_node_put(memory_region_np);
+	of_node_put(mem_dump_np);
+	if (!rmem) {
+		dev_err(dev, "Failed to lookup reserved memory-region under qcom,mem-dump node\n");
+		return -ENODEV;
+	}
+
+	mem_dump_entry = &mem_info->mem_list[entry_index];
+	mem_dump_entry->mem_addr = rmem->base;
+	mem_dump_entry->mem_size = rmem->size;
+	++mem_info->mem_list_count;
+
+	dev_info(dev, "mem-dump addr 0x%llx size 0x%llx\n", rmem->base, rmem->size);
+
+	return 0;
+}
+
 /* Get memory information for the GVM */
 static int get_gvm_mem_info(struct device *dev, mem_info_t *mem_info)
 {
@@ -270,6 +316,11 @@ static int get_mem_list(struct device *dev, mem_info_t *mem_info)
 		return ret;
 	}
 
+	ret = get_dump_mem_info(dev, mem_info);
+	if (ret) {
+		return ret;
+	}
+
 	ret = get_gvm_mem_info(dev, mem_info);
 	if (ret) {
 		return ret;
@@ -322,9 +373,25 @@ static int tz_ffi_probe(struct platform_device *pdev)
 
 	dev_info(dev, "tz_ffi_probe enter\n");
 
+	/* Make the dma_alloc_coherent calls allocate from the
+	 * memory-region specified in the Device Tree */
+	ret = of_reserved_mem_device_init(dev);
+	if (ret) {
+		dev_err(dev, "reserved-mem init failed: %d\n", ret);
+		return -ENXIO;
+	}
+
+	ret = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(64));
+	if (ret) {
+		dev_err(dev, "dma_set_mask_and_coherent failed %d\n", ret);
+		of_reserved_mem_device_release(dev);
+		return -ENXIO;
+	}
+
 	mem_info = dma_alloc_coherent(dev, size, &mem_info_paddr, GFP_KERNEL);
 	if (mem_info == NULL) {
 		dev_err(dev, "Failed to allocate memory\n");
+		of_reserved_mem_device_release(dev);
 		return -ENOMEM;
 	}
 
@@ -335,6 +402,7 @@ static int tz_ffi_probe(struct platform_device *pdev)
 	if (ret) {
 		dev_err(dev, "Failed to create tzffi bridge, ret %d\n", ret);
 		dma_free_coherent(dev, size, mem_info, mem_info_paddr);
+		of_reserved_mem_device_release(dev);
 		return -EINVAL;
 	}
 
@@ -368,6 +436,7 @@ static int tz_ffi_probe(struct platform_device *pdev)
 
 	qcom_tzmem_deregister(tzmem_handle);
 	dma_free_coherent(dev, size, mem_info, mem_info_paddr);
+	of_reserved_mem_device_release(dev);
 
 	dev_info(dev, "tz_ffi_probe exit\n");
 	return ret;
