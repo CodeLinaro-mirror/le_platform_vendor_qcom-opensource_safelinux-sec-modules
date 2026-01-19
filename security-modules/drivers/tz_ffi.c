@@ -26,7 +26,7 @@
 /* Max wait for TZ availability ~200ms */
 #define QCOM_TZ_FFI_MAX_RETRIES (200u)
 #define TZ_FFI_NUM_RANGES (32u)
-#define TZ_FFI_VERSION (1u)
+#define TZFFI_VERSION_HGY (2u)
 
 /* 
  * define UINT32_MAX manually since I have conflicts between
@@ -55,7 +55,7 @@ static void init_mem_info(mem_info_t *mem_info)
 {
 	(void)memset((void*)mem_info, 0, sizeof(*mem_info));
 
-	mem_info->version = TZ_FFI_VERSION;
+	mem_info->version = TZFFI_VERSION_HGY;
 	mem_info->mem_list_count = 0;
 }
 
