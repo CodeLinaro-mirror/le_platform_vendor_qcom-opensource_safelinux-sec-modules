@@ -59,34 +59,16 @@ static void init_mem_info(mem_info_t *mem_info)
 	mem_info->mem_list_count = 0;
 }
 
-static int get_mem_info_actual_size(struct device *dev, mem_info_t *mem_info, size_t *actual_size)
+static void get_mem_info_actual_size(struct device *dev, mem_info_t *mem_info, size_t *actual_size)
 {
 	uint32_t entry_index = mem_info->mem_list_count;
-	if (entry_index > TZ_FFI_NUM_RANGES) {
-		dev_err(dev, "Too many ranges, index %u surpass tz_ffi_num_ranges %u\n",
-				entry_index, TZ_FFI_NUM_RANGES);
-		return -EINVAL;
-	}
-
 	uint32_t unused_entries = TZ_FFI_NUM_RANGES - entry_index;
-	if (unused_entries > UINT32_MAX / sizeof(mem_entry_t)) {
-		dev_err(dev, "Size of mem_entry_t is too big %lu\n", sizeof(mem_entry_t));
-		return -EINVAL;
-	}
-
 	uint32_t reduction = unused_entries * sizeof(mem_entry_t);
-	if (reduction > sizeof(*mem_info)) {
-		dev_err(dev, "Too many unused ranges %u, multiplication would overflow\n",
-				unused_entries);
-		return -EINVAL;
-	}
 
 	/* This is the size with the real amount of regions to be sent to TZ */
 	uint32_t actual_mem_info_size = sizeof(*mem_info) - reduction;
 
 	*actual_size = actual_mem_info_size;
-
-	return 0;
 }
 
 static int get_tz_ffi_mem_info(struct device *dev, mem_info_t *mem_info)
@@ -259,11 +241,6 @@ static int get_gvm_mem_info(struct device *dev, mem_info_t *mem_info)
 	int i = 0;
 
 	for_each_compatible_node(np, NULL, "qcom,gh-secure-vm-loader") {
-		if (!np) {
-			dev_err(dev, "Node gh-secure-vm-loader not found\n");
-			return -ENODEV;
-		}
-
 		count = of_count_phandle_with_args(np, "memory-region", NULL);
 		if (count < 0) {
 			dev_err(dev, "Failed to count memory regions\n");
@@ -415,11 +392,7 @@ static int tz_ffi_probe(struct platform_device *pdev)
 			break;
 		}
 
-		ret = get_mem_info_actual_size(dev, mem_info, &actual_size);
-		if (ret) {
-			dev_err(dev, "Failed to get actual size\n");
-			break;
-		}
+		get_mem_info_actual_size(dev, mem_info, &actual_size);
 
 		ret = crc_compute(dev, mem_info, actual_size, &crc8);
 		if (ret) {
