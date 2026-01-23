@@ -20,3 +20,6 @@ scm_user_intf_sec-objs := drivers/scm_user_intf_sec.o
 
 obj-m += tz_ffi.o
 tz_ffi-objs := drivers/tz_ffi.o drivers/crc8.o
+
+obj-m += dice_vm.o
+dice_vm-objs := drivers/dice_vm.o
