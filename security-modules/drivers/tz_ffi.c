@@ -26,7 +26,7 @@
 /* Max wait for TZ availability ~200ms */
 #define QCOM_TZ_FFI_MAX_RETRIES (200u)
 #define TZ_FFI_NUM_RANGES (32u)
-#define TZ_FFI_VERSION (1u)
+#define TZFFI_VERSION_HGY (2u)
 
 /* 
  * define UINT32_MAX manually since I have conflicts between
@@ -55,38 +55,20 @@ static void init_mem_info(mem_info_t *mem_info)
 {
 	(void)memset((void*)mem_info, 0, sizeof(*mem_info));
 
-	mem_info->version = TZ_FFI_VERSION;
+	mem_info->version = TZFFI_VERSION_HGY;
 	mem_info->mem_list_count = 0;
 }
 
-static int get_mem_info_actual_size(struct device *dev, mem_info_t *mem_info, size_t *actual_size)
+static void get_mem_info_actual_size(struct device *dev, mem_info_t *mem_info, size_t *actual_size)
 {
 	uint32_t entry_index = mem_info->mem_list_count;
-	if (entry_index > TZ_FFI_NUM_RANGES) {
-		dev_err(dev, "Too many ranges, index %u surpass tz_ffi_num_ranges %u\n",
-				entry_index, TZ_FFI_NUM_RANGES);
-		return -EINVAL;
-	}
-
 	uint32_t unused_entries = TZ_FFI_NUM_RANGES - entry_index;
-	if (unused_entries > UINT32_MAX / sizeof(mem_entry_t)) {
-		dev_err(dev, "Size of mem_entry_t is too big %lu\n", sizeof(mem_entry_t));
-		return -EINVAL;
-	}
-
 	uint32_t reduction = unused_entries * sizeof(mem_entry_t);
-	if (reduction > sizeof(*mem_info)) {
-		dev_err(dev, "Too many unused ranges %u, multiplication would overflow\n",
-				unused_entries);
-		return -EINVAL;
-	}
 
 	/* This is the size with the real amount of regions to be sent to TZ */
 	uint32_t actual_mem_info_size = sizeof(*mem_info) - reduction;
 
 	*actual_size = actual_mem_info_size;
-
-	return 0;
 }
 
 static int get_tz_ffi_mem_info(struct device *dev, mem_info_t *mem_info)
@@ -200,6 +182,52 @@ static int get_tzcom_mem_info(struct device *dev, mem_info_t *mem_info)
 	return 0;
 }
 
+/* Get memory information for the dump heap from DeviceTree */
+static int get_dump_mem_info(struct device *dev, mem_info_t *mem_info)
+{
+	uint32_t entry_index = mem_info->mem_list_count;
+	struct device_node *mem_dump_np = NULL;
+	struct device_node *memory_region_np = NULL;
+	struct reserved_mem *rmem = NULL;
+	mem_entry_t *mem_dump_entry = NULL;
+
+	if (entry_index == TZ_FFI_NUM_RANGES) {
+		dev_err(dev, "Too many ranges, index %u equals tz_ffi_num_ranges %u\n",
+				entry_index, TZ_FFI_NUM_RANGES);
+		return -EINVAL;
+	}
+
+	mem_dump_np = of_find_compatible_node(NULL, NULL, "qcom,mem-dump");
+	if (!mem_dump_np) {
+		dev_err(dev, "Failed to find qcom,mem-dump node\n");
+		return -ENODEV;
+	}
+
+	memory_region_np = of_parse_phandle(mem_dump_np, "memory-region", 0);
+	if (!memory_region_np) {
+		dev_err(dev, "No memory-region specified under qcom,mem-dump node\n");
+		of_node_put(mem_dump_np);
+		return -ENODEV;
+	}
+
+	rmem = of_reserved_mem_lookup(memory_region_np);
+	of_node_put(memory_region_np);
+	of_node_put(mem_dump_np);
+	if (!rmem) {
+		dev_err(dev, "Failed to lookup reserved memory-region under qcom,mem-dump node\n");
+		return -ENODEV;
+	}
+
+	mem_dump_entry = &mem_info->mem_list[entry_index];
+	mem_dump_entry->mem_addr = rmem->base;
+	mem_dump_entry->mem_size = rmem->size;
+	++mem_info->mem_list_count;
+
+	dev_info(dev, "mem-dump addr 0x%llx size 0x%llx\n", rmem->base, rmem->size);
+
+	return 0;
+}
+
 /* Get memory information for the GVM */
 static int get_gvm_mem_info(struct device *dev, mem_info_t *mem_info)
 {
@@ -213,11 +241,6 @@ static int get_gvm_mem_info(struct device *dev, mem_info_t *mem_info)
 	int i = 0;
 
 	for_each_compatible_node(np, NULL, "qcom,gh-secure-vm-loader") {
-		if (!np) {
-			dev_err(dev, "Node gh-secure-vm-loader not found\n");
-			return -ENODEV;
-		}
-
 		count = of_count_phandle_with_args(np, "memory-region", NULL);
 		if (count < 0) {
 			dev_err(dev, "Failed to count memory regions\n");
@@ -266,6 +289,11 @@ static int get_mem_list(struct device *dev, mem_info_t *mem_info)
 	}
 
 	ret = get_tzcom_mem_info(dev, mem_info);
+	if (ret) {
+		return ret;
+	}
+
+	ret = get_dump_mem_info(dev, mem_info);
 	if (ret) {
 		return ret;
 	}
@@ -322,9 +350,25 @@ static int tz_ffi_probe(struct platform_device *pdev)
 
 	dev_info(dev, "tz_ffi_probe enter\n");
 
+	/* Make the dma_alloc_coherent calls allocate from the
+	 * memory-region specified in the Device Tree */
+	ret = of_reserved_mem_device_init(dev);
+	if (ret) {
+		dev_err(dev, "reserved-mem init failed: %d\n", ret);
+		return -ENXIO;
+	}
+
+	ret = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(64));
+	if (ret) {
+		dev_err(dev, "dma_set_mask_and_coherent failed %d\n", ret);
+		of_reserved_mem_device_release(dev);
+		return -ENXIO;
+	}
+
 	mem_info = dma_alloc_coherent(dev, size, &mem_info_paddr, GFP_KERNEL);
 	if (mem_info == NULL) {
 		dev_err(dev, "Failed to allocate memory\n");
+		of_reserved_mem_device_release(dev);
 		return -ENOMEM;
 	}
 
@@ -335,6 +379,7 @@ static int tz_ffi_probe(struct platform_device *pdev)
 	if (ret) {
 		dev_err(dev, "Failed to create tzffi bridge, ret %d\n", ret);
 		dma_free_coherent(dev, size, mem_info, mem_info_paddr);
+		of_reserved_mem_device_release(dev);
 		return -EINVAL;
 	}
 
@@ -347,11 +392,7 @@ static int tz_ffi_probe(struct platform_device *pdev)
 			break;
 		}
 
-		ret = get_mem_info_actual_size(dev, mem_info, &actual_size);
-		if (ret) {
-			dev_err(dev, "Failed to get actual size\n");
-			break;
-		}
+		get_mem_info_actual_size(dev, mem_info, &actual_size);
 
 		ret = crc_compute(dev, mem_info, actual_size, &crc8);
 		if (ret) {
@@ -368,6 +409,7 @@ static int tz_ffi_probe(struct platform_device *pdev)
 
 	qcom_tzmem_deregister(tzmem_handle);
 	dma_free_coherent(dev, size, mem_info, mem_info_paddr);
+	of_reserved_mem_device_release(dev);
 
 	dev_info(dev, "tz_ffi_probe exit\n");
 	return ret;
