@@ -1,0 +1,17 @@
+#!/usr/bin/make -f
+%:
+	dh $@
+
+export KERNEL_SRC = /usr/src/kernel
+export M = $(CURDIR)
+export KBUILD_OPTIONS := KCFLAGS="-I/usr/src/kernel/drivers/firmware -I/usr/src/kernel/include/linux"
+
+override_dh_auto_install:
+	dh_auto_install --destdir=$(CURDIR)/debian/tmp
+	make KDIR=${KERNEL_SRC} INSTALL_MOD_PATH=$(CURDIR)/debian/tmp/ modules_install
+	make KDIR=${KERNEL_SRC} HDR_INSTAL_PATH=$(CURDIR)/debian/tmp/usr/include headers_install
+	install -Dm 0644 $(CURDIR)/modules-load/scm_user_intf_sec.conf $(CURDIR)/debian/tmp/etc/modules-load.d/scm_user_intf_sec.conf
+	install -Dm 0644 $(CURDIR)/modules-load/tz_ffi.conf $(CURDIR)/debian/tmp/etc/modules-load.d/tz_ffi.conf
+
+.PHONY: clean
+clean:

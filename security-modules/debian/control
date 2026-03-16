@@ -1,0 +1,20 @@
+Source: safelinux-sec-modules
+Section: devel
+Priority: optional
+Maintainer: leiwang <leiwan@qti.qualcomm.com>
+Build-Depends: debhelper-compat (= 13), linux-qcom-source
+Standards-Version: 4.6.0
+Homepage: 
+
+Package: safelinux-sec-modules
+Architecture: arm64
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: security kernel drivers
+ This is a rpm contains security out of tree kernel modules.
+
+Package: safelinux-sec-modules-dev
+Architecture: arm64
+Section: libdevel
+Depends: ${shlibs:Depends}, ${misc:Depends}, safelinux-sec-modules(= ${binary:Version})
+Description: security kernel drivers
+
