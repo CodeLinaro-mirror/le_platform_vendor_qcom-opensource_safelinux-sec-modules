@@ -121,7 +121,7 @@ static int get_tz_ffi_mem_info(struct device *dev, mem_info_t *mem_info)
 	tzcom_entry->mem_size = rmem->size;
 	++mem_info->mem_list_count;
 
-	dev_info(dev, "tz-ffi addr 0x%llx size 0x%llx\n", rmem->base, rmem->size);
+	dev_dbg(dev, "tz-ffi addr 0x%llx size 0x%llx\n", rmem->base, rmem->size);
 
 	return 0;
 }
@@ -177,7 +177,7 @@ static int get_tzcom_mem_info(struct device *dev, mem_info_t *mem_info)
 	tzcom_entry->mem_size = rmem->size;
 	++mem_info->mem_list_count;
 
-	dev_info(dev, "tzcom addr 0x%llx size 0x%llx\n", rmem->base, rmem->size);
+	dev_dbg(dev, "tzcom addr 0x%llx size 0x%llx\n", rmem->base, rmem->size);
 
 	return 0;
 }
@@ -223,7 +223,7 @@ static int get_dump_mem_info(struct device *dev, mem_info_t *mem_info)
 	mem_dump_entry->mem_size = rmem->size;
 	++mem_info->mem_list_count;
 
-	dev_info(dev, "mem-dump addr 0x%llx size 0x%llx\n", rmem->base, rmem->size);
+	dev_dbg(dev, "mem-dump addr 0x%llx size 0x%llx\n", rmem->base, rmem->size);
 
 	return 0;
 }
@@ -269,7 +269,7 @@ static int get_gvm_mem_info(struct device *dev, mem_info_t *mem_info)
 				++mem_info->mem_list_count;
 				++entry_index;
 
-				dev_info(dev, "GVM memory-region %d: base = 0x%llx, size = 0x%llx\n", i, res.start, resource_size(&res));
+				dev_dbg(dev, "GVM memory-region %d: base = 0x%llx, size = 0x%llx\n", i, res.start, resource_size(&res));
 				of_node_put(mem_np);
 			}
 		}
@@ -313,7 +313,7 @@ static int crc_compute(struct device *dev, mem_info_t *mem_info, size_t size, ui
 	if (crc_ret != SUCCESS) {
 		dev_err(dev, "Failed to compute CRC, ret=%d\n", crc_ret);
 	}
-	dev_info(dev, "Compute CRC, ret=%d, crc8=0x%x\n", crc_ret, *crc8);
+	dev_dbg(dev, "Compute CRC, ret=%d, crc8=0x%x\n", crc_ret, *crc8);
 
 	return crc_ret;
 }
@@ -348,7 +348,7 @@ static int tz_ffi_probe(struct platform_device *pdev)
 	uint8_t crc8 = 0;
 	int ret = 0;
 
-	dev_info(dev, "tz_ffi_probe enter\n");
+	dev_dbg(dev, "tz_ffi_probe enter\n");
 
 	/* Make the dma_alloc_coherent calls allocate from the
 	 * memory-region specified in the Device Tree */
@@ -411,14 +411,14 @@ static int tz_ffi_probe(struct platform_device *pdev)
 	dma_free_coherent(dev, size, mem_info, mem_info_paddr);
 	of_reserved_mem_device_release(dev);
 
-	dev_info(dev, "tz_ffi_probe exit\n");
+	dev_dbg(dev, "tz_ffi_probe exit\n");
 	return ret;
 }
 
 static int tz_ffi_remove(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
-	dev_info(dev, "qcom_tz_ffi_exit\n");
+	dev_dbg(dev, "qcom_tz_ffi_exit\n");
 
 	return 0;
 }
