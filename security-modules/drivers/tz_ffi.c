@@ -12,6 +12,7 @@
 #include <linux/types.h>
 #include <linux/kernel.h>
 #include <linux/dma-mapping.h>
+#include <linux/io.h>
 #include <linux/of_address.h>
 #include <linux/module.h>
 #include <linux/of.h>
@@ -343,6 +344,49 @@ static int smc_tz_safety_enable_ffi(struct device *dev, phys_addr_t mem_info_pad
 	return ret;
 }
 
+/*
+ * TCSR_SOFT_SKU_SPARE_0_CONTROL register encodes the software
+ * configuration variant in bits [9:8]:
+ *
+ *   0 (NON_SAFE_IVI) - non-safety IVI build: TZ FFI setup not required
+ *   1 (ADAS)         - ADAS safety build
+ *   2 (SAFE_IVI)     - IVI safety build
+ *   3 (FLEX)         - FLEX safety build
+ *
+ * Any non-zero value means this is a safety-capable build and TZ expects the
+ * FFI memory list to be sent.
+ */
+#define SKU_SW_CONFIG_SHIFT  8u
+#define SKU_SW_CONFIG_MASK   0x3u
+#define SW_CONFIG_NON_SAFE   0u
+
+static bool tz_ffi_is_safety_build(struct device *dev)
+{
+	struct device_node *sku_np;
+	void __iomem *sku_base;
+	u32 val;
+	u8 sw_config;
+
+	sku_np = of_parse_phandle(dev->of_node, "qcom,sku-reg", 0);
+	if (!sku_np) {
+		dev_warn(dev, "qcom,sku-reg not found, assuming safety build\n");
+		return true;
+	}
+
+	sku_base = of_iomap(sku_np, 0);
+	of_node_put(sku_np);
+	if (!sku_base) {
+		dev_warn(dev, "Failed to map SKU register, assuming safety build\n");
+		return true;
+	}
+
+	val = ioread32(sku_base);
+	iounmap(sku_base);
+
+	sw_config = (val >> SKU_SW_CONFIG_SHIFT) & SKU_SW_CONFIG_MASK;
+	return sw_config != SW_CONFIG_NON_SAFE;
+}
+
 static int tz_ffi_probe(struct platform_device *pdev)
 {
 	size_t size = ROUND_TO_MIN_DMA_ALLOC_SIZE(sizeof(mem_info_t));
@@ -358,6 +402,11 @@ static int tz_ffi_probe(struct platform_device *pdev)
 	int ret = 0;
 
 	dev_dbg(dev, "tz_ffi_probe enter\n");
+
+	if (!tz_ffi_is_safety_build(dev)) {
+		dev_info(dev, "Non-safety build detected, skipping FFI setup\n");
+		return 0;
+	}
 
 	/* Make the dma_alloc_coherent calls allocate from the
 	 * memory-region specified in the Device Tree */
