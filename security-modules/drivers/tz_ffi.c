@@ -28,7 +28,7 @@
 #define TZ_FFI_NUM_RANGES (32u)
 #define TZFFI_VERSION_HGY (2u)
 
-/* 
+/*
  * define UINT32_MAX manually since I have conflicts between
  * stdint.h and linux/types.h
  */
@@ -125,7 +125,6 @@ static int get_tz_ffi_mem_info(struct device *dev, mem_info_t *mem_info)
 
 	return 0;
 }
-
 /* Get memory information for the TZCom heap from DeviceTree */
 static int get_tzcom_mem_info(struct device *dev, mem_info_t *mem_info)
 {
@@ -182,6 +181,11 @@ static int get_tzcom_mem_info(struct device *dev, mem_info_t *mem_info)
 	return 0;
 }
 
+static const char *memdump_compat[] = {
+    "qcom,mem-dump-v21",
+    "qcom,mem-dump",
+};
+
 /* Get memory information for the dump heap from DeviceTree */
 static int get_dump_mem_info(struct device *dev, mem_info_t *mem_info)
 {
@@ -197,7 +201,12 @@ static int get_dump_mem_info(struct device *dev, mem_info_t *mem_info)
 		return -EINVAL;
 	}
 
-	mem_dump_np = of_find_compatible_node(NULL, NULL, "qcom,mem-dump");
+	for (int i = 0; i < ARRAY_SIZE(memdump_compat); ++i) {
+		mem_dump_np = of_find_compatible_node(NULL, NULL, memdump_compat[i]);
+		if (mem_dump_np)
+			break;
+	}
+
 	if (!mem_dump_np) {
 		dev_err(dev, "Failed to find qcom,mem-dump node\n");
 		return -ENODEV;
