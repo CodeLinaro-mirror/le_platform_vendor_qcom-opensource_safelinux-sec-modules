@@ -47,6 +47,9 @@
 #include <errno.h>
 #include <uapi/misc/dice_vm.h>
 
+#define CREATE_TRACE_POINTS
+#include <trace/events/dice_vm.h>
+
 /** Context data for an instance of the driver */
 struct dice_vm_drvdata {
 	char name[MAX_NAME];
@@ -76,6 +79,7 @@ static ssize_t dice_vm_read(struct file *filp, char __user *ptr, size_t len,
 {
 	dice_vm_info_t vm_info;
 	struct dice_vm_drvdata *drv = to_dice_vm_drvdata(filp);
+	ssize_t ret;
 
 	if (!drv || !drv->rmem || !ptr)
 		return -EINVAL;
@@ -84,13 +88,18 @@ static ssize_t dice_vm_read(struct file *filp, char __user *ptr, size_t len,
 	vm_info.pas_id = drv->pas_id;
 	strscpy(vm_info.fw_name, drv->fw_name ? drv->fw_name : "", sizeof(vm_info.fw_name));
 
-	return simple_read_from_buffer(ptr, len, off, &vm_info, sizeof(vm_info));
+	ret = simple_read_from_buffer(ptr, len, off, &vm_info, sizeof(vm_info));
+	trace_dice_vm_read(drv->vm_name, len, ret);
+	return ret;
 }
 
 /** Intentionally unsupported. The device is read-only; write() is a no-op. */
 static ssize_t dice_vm_write(struct file *filp, const char __user *ptr,
 			       size_t len, loff_t *off)
 {
+	struct dice_vm_drvdata *drv = to_dice_vm_drvdata(filp);
+
+	dev_dbg(drv->misc.parent, "write not supported\n");
 	return -EOPNOTSUPP;
 }
 
@@ -102,14 +111,20 @@ static int dice_vm_mmap(struct file *filp, struct vm_area_struct *vma)
 	struct dice_vm_drvdata *drvdata = to_dice_vm_drvdata(filp);
 	unsigned long pfn_off = 0;
 	size_t map_size;
+	int ret;
 
 	if (!drvdata || !drvdata->rmem || !vma)
 		return -EINVAL;
 
 	/** Validate mapping size vs reserved size */
 	map_size = vma->vm_end - vma->vm_start;
-	if (map_size > drvdata->rmem->size)
-		return -EINVAL;
+	if (map_size > drvdata->rmem->size) {
+		dev_err(drvdata->misc.parent,
+			"mmap size too large for '%s': requested %zu, carveout %llu\n",
+			drvdata->vm_name, map_size, (u64)drvdata->rmem->size);
+		ret = -EINVAL;
+		goto out;
+	}
 
 	/* Ensure userspace cannot acquire VM_WRITE + VM_SHARED later. */
 	if (vma->vm_flags & VM_WRITE)
@@ -126,7 +141,11 @@ static int dice_vm_mmap(struct file *filp, struct vm_area_struct *vma)
 	/** Offset safety: map from reserved_mem base */
 	pfn_off = (drvdata->rmem->base >> PAGE_SHIFT);
 
-	return remap_pfn_range(vma, vma->vm_start, pfn_off, map_size, vma->vm_page_prot);
+	ret = remap_pfn_range(vma, vma->vm_start, pfn_off, map_size, vma->vm_page_prot);
+out:
+	trace_dice_vm_mmap(drvdata->vm_name, map_size,
+			   (u64)drvdata->rmem->size, ret);
+	return ret;
 }
 
 static const struct file_operations dice_vm_fops = {
@@ -184,8 +203,6 @@ static int dice_vm_probe(struct platform_device *pdev)
   		return -EINVAL;
   	}
 
-	dev_dbg(dev, "vm-name=%s\n", vm_name);
-
 	vmloader_node = of_parse_phandle((&pdev->dev)->of_node, "qcom,vm-loader", 0);
 	if (!vmloader_node) {
 		dev_err(dev, "missing qcom,vm-loader phandle\n");
@@ -198,19 +215,20 @@ static int dice_vm_probe(struct platform_device *pdev)
   		return -EINVAL;
   	}
 
-	dev_dbg(dev, "pas-id=%d\n", pas_id);
-
 	ret = of_property_read_string(vmloader_node, "qcom,firmware-name", &fw_name);
   	if (ret) {
   		dev_err(dev, "DT error getting \"qcom,firmware-name\": %d\n", ret);
   		return -EINVAL;
   	}
 
-	dev_dbg(dev, "firmware-name=%s\n", fw_name);
+	dev_dbg(dev, "vm_name=%s fw_name=%s pas_id=%d base=0x%llx size=0x%llx\n",
+		vm_name, fw_name, pas_id, (u64)rmem->base, (u64)rmem->size);
 
 	drvdata = devm_kzalloc(dev, sizeof(*drvdata), GFP_KERNEL);
-	if (!drvdata)
+	if (!drvdata) {
+		dev_err(dev, "out of memory\n");
 		return -ENOMEM;
+	}
 
 	*drvdata = (struct dice_vm_drvdata) {
 		.rmem = rmem,
@@ -228,7 +246,8 @@ static int dice_vm_probe(struct platform_device *pdev)
 
 	/** Validate vm_name length to avoid truncation surprises */
 	if (strnlen(vm_name, sizeof(drvdata->name)) >= (sizeof(drvdata->name) - (sizeof(DRIVER_NAME) + 1))) {
-		dev_warn(dev, "vm_name too long, truncating for device name\n");
+		dev_err(dev, "vm_name '%s' too long for device name\n", vm_name);
+		return -EINVAL;
 	}
 
 	/** Compose the device name from a prefix and the VM name. */
@@ -243,7 +262,7 @@ static int dice_vm_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, drvdata);
 
-	dev_info_once(dev, "DICE VM device '%s' registered\n", drvdata->name);
+	dev_dbg(dev, "DICE VM device '%s' registered\n", drvdata->name);
 	return 0;
 }
 
@@ -251,6 +270,7 @@ static int dice_vm_remove(struct platform_device *pdev)
 {
 	struct dice_vm_drvdata *drvdata = platform_get_drvdata(pdev);
 
+	dev_dbg(drvdata->misc.parent, "DICE VM device '%s' removed\n", drvdata->vm_name);
 	misc_deregister(&drvdata->misc);
 
 	return 0;
