@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-/* Copyright (C) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+/* Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #include <linux/arm-smccc.h>
 #include <linux/cdev.h>
@@ -17,6 +17,9 @@
 #include <linux/dma-buf.h>
 #include <linux/version.h>
 #include <uapi/misc/scm_user_intf.h>
+
+#define CREATE_TRACE_POINTS
+#include <trace/events/scm_user_intf_sec.h>
 
 #if (LINUX_VERSION_CODE != KERNEL_VERSION(5, 14, 0))
 #include <qcom_scm.h>
@@ -141,6 +144,7 @@ static int qcom_scm_open(struct inode *inode, struct file *filp)
 						     scm_miscdev);
 
 	filp->private_data = dev_data;
+	dev_dbg(dev_data->dev, "scm_user_intf_sec device opened\n");
 	return 0;
 }
 
@@ -197,10 +201,12 @@ static int scm_user_intf_dmabuf_map_pa(int fd, dma_buf_info_t *dma_buf_info)
 	}
 	dma_buf_info->p_addr_len = new_sgt->sgl->length;
 
+	trace_scm_dmabuf_map_pa(fd, dma_buf_info->p_addr, dma_buf_info->p_addr_len, ret);
 	return ret;
 
 err:
 	scm_user_intf_dmabuf_unmap(dma_buf_info);
+	trace_scm_dmabuf_map_pa(fd, dma_buf_info->p_addr, dma_buf_info->p_addr_len, ret);
 	return ret;
 }
 
@@ -280,6 +286,7 @@ static int scm_smcinvoke_memobj_update_paddr(struct scm_hand_shake *scm_data, dm
 
 	void __user *ip = (void __user *)scm_data->args_buffer[3];
 	if (copy_from_user(mem_obj_info_list, ip, sizeof(*mem_obj_info_list))) {
+		dev_err(__scm_dev->dev, "copy_from_user failed for mem_obj_info_list\n");
 		return -EFAULT;
 	}
 
@@ -358,13 +365,20 @@ static long scm_smcinvoke_ioctl(struct file *file, unsigned int cmd, unsigned lo
 	int ret = 0;
 
 	if (copy_from_user(&scm_data, ip, sizeof(struct scm_hand_shake))) {
+		dev_err(__scm_dev->dev, "copy_from_user failed for scm_hand_shake\n");
 		return -EFAULT;
 	}
 
+	dev_dbg(__scm_dev->dev, "scm_smcinvoke_ioctl: svc=0x%x cmd=0x%x arginfo=0x%x\n",
+		scm_data.svc, scm_data.cmd, scm_data.arginfo);
+
 	/* Validate number of args */
 	no_of_args = scm_data.arginfo & 0x0F;
-	if (no_of_args > MAX_QCOM_SCM_ARGS)
+	if (no_of_args > MAX_QCOM_SCM_ARGS) {
+		dev_err(__scm_dev->dev, "no_of_args=%d exceeds maximum=%d\n",
+			no_of_args, MAX_QCOM_SCM_ARGS);
 		return -EINVAL;
+	}
 
 	/* Save dmabuf fd before it's translated into pa */
 	u64 dmabuf_fd = scm_data.args_buffer[0];
@@ -403,6 +417,8 @@ static long scm_smcinvoke_ioctl(struct file *file, unsigned int cmd, unsigned lo
 		scm_data.ret = qcom_scm_invoke_callback_response(out_buf, out_buf_size, (int32_t *)&res.result[1], &res.result[0], (unsigned int *)&res.result[2]);
 		scm_user_intf_dmabuf_unmap(&dma_buf_info);
 	} else {
+		dev_err(__scm_dev->dev, "unsupported cmd=0x%x for svc=0x%x\n",
+			scm_data.cmd, scm_data.svc);
 		return -EFAULT;
 	}
 #else
@@ -435,6 +451,8 @@ static long scm_smcinvoke_ioctl(struct file *file, unsigned int cmd, unsigned lo
 		}
 		scm_user_intf_dmabuf_unmap(&dma_buf_info);
 	} else {
+		dev_err(__scm_dev->dev, "unsupported cmd=0x%x for svc=0x%x\n",
+			scm_data.cmd, scm_data.svc);
 		return -EFAULT;
 	}
 
@@ -446,21 +464,30 @@ static long scm_smcinvoke_ioctl(struct file *file, unsigned int cmd, unsigned lo
 	}
 
 	if (copy_to_user(ip, &scm_data, sizeof(struct scm_hand_shake))) {
-		return -EFAULT;
+		dev_err(__scm_dev->dev, "copy_to_user failed for svc=0x%x cmd=0x%x\n",
+			scm_data.svc, scm_data.cmd);
+		ret = -EFAULT;
+		goto out;
 	}
 
 	if (scm_data.ret) {
 		dev_err(__scm_dev->dev, "scm smcinvoke ioctl failed - ret : %d\n", scm_data.ret);
-		return scm_data.ret;
+		ret = scm_data.ret;
+		goto out;
 	}
 
+out:
+	trace_scm_smcinvoke_ioctl(scm_data.svc, scm_data.cmd, dmabuf_fd, in_buf_size,
+				   out_buf_size, scm_data.ret, ret);
 	return ret;
 }
 
 static long scm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
-	if (cmd != SCM_HAND_SHAKE_IOCTL)
+	if (cmd != SCM_HAND_SHAKE_IOCTL) {
+		dev_err(__scm_dev->dev, "unsupported ioctl cmd=0x%x\n", cmd);
 		return -EFAULT;
+	}
 
 	return scm_smcinvoke_ioctl(file, cmd, arg);
 }
@@ -513,14 +540,12 @@ static int qcom_scm_intf_probe(struct platform_device *pdev)
 		return dev_err_probe(dev, -EPROBE_DEFER, "qcom_scm is not up!\n");
 
 	ret = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(64));
-	if (ret) {
-		dev_err(dev, "dma_set_mask_and_coherent failed %d\n", ret);
-		return ret;
-	}
+	if (ret)
+		return dev_err_probe(dev, ret, "dma_set_mask_and_coherent failed\n");
 
 	dev_data = devm_kzalloc(dev, sizeof(struct scm_dev_data), GFP_KERNEL);
 	if (!dev_data)
-		return -ENOMEM;
+		return dev_err_probe(dev, -ENOMEM, "failed to allocate dev_data\n");
 
 	dev_data->scm_pdev = pdev;
 	dev_data->dev = &pdev->dev;
@@ -530,10 +555,8 @@ static int qcom_scm_intf_probe(struct platform_device *pdev)
 						    "scmnode_sec");
 	dev_data->scm_miscdev.fops = &qcom_scm_fops;
 	ret = misc_register(&dev_data->scm_miscdev);
-	if (ret) {
-		dev_err(dev, "failed to register misc device. err %d\n", ret);
-		return ret;
-	}
+	if (ret)
+		return dev_err_probe(dev, ret, "failed to register misc device\n");
 
 	__scm_dev = dev_data;
 	__scm_dev->dev = dev_data->dev;
@@ -543,9 +566,8 @@ static int qcom_scm_intf_probe(struct platform_device *pdev)
 	 */
 	ret = qcom_scm_get_scm_drvdata(&scm_drvdata);
 	if (ret) {
-		dev_err(dev, "failed to get scm drvdata. err %d\n", ret);
 		misc_deregister(&dev_data->scm_miscdev);
-		return ret;
+		return dev_err_probe(dev, ret, "failed to get scm drvdata\n");
 	}
 	platform_set_drvdata(pdev, scm_drvdata);
 
@@ -561,9 +583,8 @@ static int qcom_scm_intf_probe(struct platform_device *pdev)
 		rmem = of_reserved_mem_lookup(mem_node);
 		of_node_put(mem_node);
 		if (!rmem) {
-			dev_err(dev, "%s: Failed to get memory-region node\n", __func__);
 			misc_deregister(&dev_data->scm_miscdev);
-			return -EINVAL;
+			return dev_err_probe(dev, -EINVAL, "Failed to get memory-region node\n");
 		}
 
 		ret = qcom_tzmem_register(rmem->base,
@@ -574,19 +595,23 @@ static int qcom_scm_intf_probe(struct platform_device *pdev)
 				   QCOM_SCM_PERM_RW,
 				   &g_tzmem_handle);
 		if (ret) {
-			dev_err(dev, "%s: Failed to tzmem register. err %d\n", __func__, ret);
 			misc_deregister(&dev_data->scm_miscdev);
-			return ret;
+			return dev_err_probe(dev, ret, "Failed to tzmem register\n");
 		}
 	}
 #endif
 
+	dev_dbg(dev, "scm_user_intf_sec device '%s' registered, tzmem_handle=0x%llx\n",
+		dev_data->scm_miscdev.name, g_tzmem_handle);
 	return 0;
 }
 
 static int qcom_scm_intf_remove(struct platform_device *pdev)
 {
 	struct scm_dev_data *dev_data = __scm_dev;
+
+	dev_dbg(dev_data->dev, "scm_user_intf_sec device '%s' removed\n",
+		dev_data->scm_miscdev.name);
 
 #ifndef CONFIG_SAFELINUX_KERNEL
 	if (g_tzmem_handle) {
