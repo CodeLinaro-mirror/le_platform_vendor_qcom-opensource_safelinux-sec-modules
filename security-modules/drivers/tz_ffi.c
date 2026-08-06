@@ -12,6 +12,7 @@
 #include <linux/types.h>
 #include <linux/kernel.h>
 #include <linux/dma-mapping.h>
+#include <linux/io.h>
 #include <linux/of_address.h>
 #include <linux/module.h>
 #include <linux/of.h>
@@ -28,7 +29,7 @@
 #define TZ_FFI_NUM_RANGES (32u)
 #define TZFFI_VERSION_HGY (2u)
 
-/* 
+/*
  * define UINT32_MAX manually since I have conflicts between
  * stdint.h and linux/types.h
  */
@@ -125,7 +126,6 @@ static int get_tz_ffi_mem_info(struct device *dev, mem_info_t *mem_info)
 
 	return 0;
 }
-
 /* Get memory information for the TZCom heap from DeviceTree */
 static int get_tzcom_mem_info(struct device *dev, mem_info_t *mem_info)
 {
@@ -182,6 +182,11 @@ static int get_tzcom_mem_info(struct device *dev, mem_info_t *mem_info)
 	return 0;
 }
 
+static const char *memdump_compat[] = {
+    "qcom,mem-dump-v21",
+    "qcom,mem-dump",
+};
+
 /* Get memory information for the dump heap from DeviceTree */
 static int get_dump_mem_info(struct device *dev, mem_info_t *mem_info)
 {
@@ -197,7 +202,12 @@ static int get_dump_mem_info(struct device *dev, mem_info_t *mem_info)
 		return -EINVAL;
 	}
 
-	mem_dump_np = of_find_compatible_node(NULL, NULL, "qcom,mem-dump");
+	for (int i = 0; i < ARRAY_SIZE(memdump_compat); ++i) {
+		mem_dump_np = of_find_compatible_node(NULL, NULL, memdump_compat[i]);
+		if (mem_dump_np)
+			break;
+	}
+
 	if (!mem_dump_np) {
 		dev_err(dev, "Failed to find qcom,mem-dump node\n");
 		return -ENODEV;
@@ -334,6 +344,79 @@ static int smc_tz_safety_enable_ffi(struct device *dev, phys_addr_t mem_info_pad
 	return ret;
 }
 
+/*
+ * TCSR_SOFT_SKU_SPARE_0_CONTROL register encodes the software
+ * configuration variant in bits [9:8]:
+ *
+ *   0 (NON_SAFE_IVI) - non-safety IVI build: TZ FFI setup not required
+ *   1 (ADAS)         - ADAS safety build
+ *   2 (SAFE_IVI)     - IVI safety build
+ *   3 (FLEX)         - FLEX safety build
+ *
+ * Any non-zero value means this is a safety-capable build and TZ expects the
+ * FFI memory list to be sent.
+ */
+#define SKU_SW_CONFIG_SHIFT  8u
+#define SKU_SW_CONFIG_MASK   0x3u
+#define SW_CONFIG_NON_SAFE   0u
+
+static bool tz_ffi_is_safety_build(struct device *dev)
+{
+	struct device_node *sku_np;
+	void __iomem *sku_base;
+	u32 val;
+	u8 sw_config;
+
+	sku_np = of_parse_phandle(dev->of_node, "qcom,sku-reg", 0);
+	if (!sku_np) {
+		dev_warn(dev, "qcom,sku-reg not found, assuming safety build\n");
+		return true;
+	}
+
+	sku_base = of_iomap(sku_np, 0);
+	of_node_put(sku_np);
+	if (!sku_base) {
+		dev_warn(dev, "Failed to map SKU register, assuming safety build\n");
+		return true;
+	}
+
+	val = ioread32(sku_base);
+	iounmap(sku_base);
+
+	sw_config = (val >> SKU_SW_CONFIG_SHIFT) & SKU_SW_CONFIG_MASK;
+	return sw_config != SW_CONFIG_NON_SAFE;
+}
+
+/* Build the mem list, CRC it, and hand it to TrustZone. */
+static int tz_ffi_send_mem_list(struct device *dev, mem_info_t *mem_info,
+				 phys_addr_t mem_info_paddr, size_t *actual_size,
+				 uint8_t *crc8)
+{
+	int ret;
+
+	ret = get_mem_list(dev, mem_info);
+	if (ret) {
+		dev_err(dev, "Failed to get tz-ffi memory list\n");
+		return ret;
+	}
+
+	get_mem_info_actual_size(dev, mem_info, actual_size);
+
+	ret = crc_compute(dev, mem_info, *actual_size, crc8);
+	if (ret) {
+		dev_err(dev, "Failed to compute crc\n");
+		return ret;
+	}
+
+	ret = smc_tz_safety_enable_ffi(dev, mem_info_paddr, *actual_size, *crc8);
+	if (ret) {
+		dev_err(dev, "Failed to enable ffi\n");
+		return ret;
+	}
+
+	return 0;
+}
+
 static int tz_ffi_probe(struct platform_device *pdev)
 {
 	size_t size = ROUND_TO_MIN_DMA_ALLOC_SIZE(sizeof(mem_info_t));
@@ -350,26 +433,27 @@ static int tz_ffi_probe(struct platform_device *pdev)
 
 	dev_dbg(dev, "tz_ffi_probe enter\n");
 
+	if (!tz_ffi_is_safety_build(dev)) {
+		dev_info(dev, "Non-safety build detected, skipping FFI setup\n");
+		return 0;
+	}
+
 	/* Make the dma_alloc_coherent calls allocate from the
 	 * memory-region specified in the Device Tree */
 	ret = of_reserved_mem_device_init(dev);
-	if (ret) {
-		dev_err(dev, "reserved-mem init failed: %d\n", ret);
-		return -ENXIO;
-	}
+	if (ret)
+		return dev_err_probe(dev, -ENXIO, "reserved-mem init failed: %d\n", ret);
 
 	ret = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(64));
 	if (ret) {
-		dev_err(dev, "dma_set_mask_and_coherent failed %d\n", ret);
 		of_reserved_mem_device_release(dev);
-		return -ENXIO;
+		return dev_err_probe(dev, -ENXIO, "dma_set_mask_and_coherent failed %d\n", ret);
 	}
 
 	mem_info = dma_alloc_coherent(dev, size, &mem_info_paddr, GFP_KERNEL);
 	if (mem_info == NULL) {
-		dev_err(dev, "Failed to allocate memory\n");
 		of_reserved_mem_device_release(dev);
-		return -ENOMEM;
+		return dev_err_probe(dev, -ENOMEM, "Failed to allocate memory\n");
 	}
 
 	ret = qcom_tzmem_register(mem_info_paddr,
@@ -377,35 +461,14 @@ static int tz_ffi_probe(struct platform_device *pdev)
 					ns_vm_perms, ns_vmid_num,
 					QCOM_SCM_PERM_RW, &tzmem_handle);
 	if (ret) {
-		dev_err(dev, "Failed to create tzffi bridge, ret %d\n", ret);
 		dma_free_coherent(dev, size, mem_info, mem_info_paddr);
 		of_reserved_mem_device_release(dev);
-		return -EINVAL;
+		return dev_err_probe(dev, -EINVAL, "Failed to create tzffi bridge, ret %d\n", ret);
 	}
 
 	init_mem_info(mem_info);
 
-	do {
-		ret = get_mem_list(dev, mem_info);
-		if (ret) {
-			dev_err(dev, "Failed to get tz-ffi memory list\n");
-			break;
-		}
-
-		get_mem_info_actual_size(dev, mem_info, &actual_size);
-
-		ret = crc_compute(dev, mem_info, actual_size, &crc8);
-		if (ret) {
-			dev_err(dev, "Failed to compute crc\n");
-			break;
-		}
-
-		ret = smc_tz_safety_enable_ffi(dev, mem_info_paddr, actual_size, crc8);
-		if (ret) {
-			dev_err(dev, "Failed to enable ffi\n");
-			break;
-		}
-	} while (0);
+	ret = tz_ffi_send_mem_list(dev, mem_info, mem_info_paddr, &actual_size, &crc8);
 
 	qcom_tzmem_deregister(tzmem_handle);
 	dma_free_coherent(dev, size, mem_info, mem_info_paddr);
