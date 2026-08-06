@@ -387,6 +387,36 @@ static bool tz_ffi_is_safety_build(struct device *dev)
 	return sw_config != SW_CONFIG_NON_SAFE;
 }
 
+/* Build the mem list, CRC it, and hand it to TrustZone. */
+static int tz_ffi_send_mem_list(struct device *dev, mem_info_t *mem_info,
+				 phys_addr_t mem_info_paddr, size_t *actual_size,
+				 uint8_t *crc8)
+{
+	int ret;
+
+	ret = get_mem_list(dev, mem_info);
+	if (ret) {
+		dev_err(dev, "Failed to get tz-ffi memory list\n");
+		return ret;
+	}
+
+	get_mem_info_actual_size(dev, mem_info, actual_size);
+
+	ret = crc_compute(dev, mem_info, *actual_size, crc8);
+	if (ret) {
+		dev_err(dev, "Failed to compute crc\n");
+		return ret;
+	}
+
+	ret = smc_tz_safety_enable_ffi(dev, mem_info_paddr, *actual_size, *crc8);
+	if (ret) {
+		dev_err(dev, "Failed to enable ffi\n");
+		return ret;
+	}
+
+	return 0;
+}
+
 static int tz_ffi_probe(struct platform_device *pdev)
 {
 	size_t size = ROUND_TO_MIN_DMA_ALLOC_SIZE(sizeof(mem_info_t));
@@ -411,23 +441,19 @@ static int tz_ffi_probe(struct platform_device *pdev)
 	/* Make the dma_alloc_coherent calls allocate from the
 	 * memory-region specified in the Device Tree */
 	ret = of_reserved_mem_device_init(dev);
-	if (ret) {
-		dev_err(dev, "reserved-mem init failed: %d\n", ret);
-		return -ENXIO;
-	}
+	if (ret)
+		return dev_err_probe(dev, -ENXIO, "reserved-mem init failed: %d\n", ret);
 
 	ret = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(64));
 	if (ret) {
-		dev_err(dev, "dma_set_mask_and_coherent failed %d\n", ret);
 		of_reserved_mem_device_release(dev);
-		return -ENXIO;
+		return dev_err_probe(dev, -ENXIO, "dma_set_mask_and_coherent failed %d\n", ret);
 	}
 
 	mem_info = dma_alloc_coherent(dev, size, &mem_info_paddr, GFP_KERNEL);
 	if (mem_info == NULL) {
-		dev_err(dev, "Failed to allocate memory\n");
 		of_reserved_mem_device_release(dev);
-		return -ENOMEM;
+		return dev_err_probe(dev, -ENOMEM, "Failed to allocate memory\n");
 	}
 
 	ret = qcom_tzmem_register(mem_info_paddr,
@@ -435,35 +461,14 @@ static int tz_ffi_probe(struct platform_device *pdev)
 					ns_vm_perms, ns_vmid_num,
 					QCOM_SCM_PERM_RW, &tzmem_handle);
 	if (ret) {
-		dev_err(dev, "Failed to create tzffi bridge, ret %d\n", ret);
 		dma_free_coherent(dev, size, mem_info, mem_info_paddr);
 		of_reserved_mem_device_release(dev);
-		return -EINVAL;
+		return dev_err_probe(dev, -EINVAL, "Failed to create tzffi bridge, ret %d\n", ret);
 	}
 
 	init_mem_info(mem_info);
 
-	do {
-		ret = get_mem_list(dev, mem_info);
-		if (ret) {
-			dev_err(dev, "Failed to get tz-ffi memory list\n");
-			break;
-		}
-
-		get_mem_info_actual_size(dev, mem_info, &actual_size);
-
-		ret = crc_compute(dev, mem_info, actual_size, &crc8);
-		if (ret) {
-			dev_err(dev, "Failed to compute crc\n");
-			break;
-		}
-
-		ret = smc_tz_safety_enable_ffi(dev, mem_info_paddr, actual_size, crc8);
-		if (ret) {
-			dev_err(dev, "Failed to enable ffi\n");
-			break;
-		}
-	} while (0);
+	ret = tz_ffi_send_mem_list(dev, mem_info, mem_info_paddr, &actual_size, &crc8);
 
 	qcom_tzmem_deregister(tzmem_handle);
 	dma_free_coherent(dev, size, mem_info, mem_info_paddr);
