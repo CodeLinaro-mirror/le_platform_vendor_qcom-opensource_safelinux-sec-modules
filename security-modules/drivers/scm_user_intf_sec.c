@@ -228,13 +228,18 @@ static int scm_user_intf_dmabuf_map(int fd, dma_buf_info_t *dma_buf_info)
 	dma_buf_begin_cpu_access(dma_buf_info->dmabuf, DMA_BIDIRECTIONAL);
 
 	ret = dma_buf_vmap(dma_buf_info->dmabuf, &new_dma_buf_map);
-	new_va = ret ? NULL : new_dma_buf_map.vaddr;
-	if (!new_va) {
-		dev_err(__scm_dev->dev, "dma_buf_vmap failed\n");
+	if (ret) {
+		dev_err(__scm_dev->dev, "dma_buf_vmap failed, ret: %d\n", ret);
 		ret = -ENOMEM;
-		//Flush the buffer (i.e. clean and invalidate)
 		dma_buf_end_cpu_access(dma_buf_info->dmabuf, DMA_BIDIRECTIONAL);
-		dma_buf_begin_cpu_access(dma_buf_info->dmabuf, DMA_BIDIRECTIONAL);
+		goto err;
+	}
+	new_va = new_dma_buf_map.vaddr;
+	if (!new_va) {
+		dev_err(__scm_dev->dev, "dma_buf_vmap returned NULL vaddr\n");
+		ret = -ENOMEM;
+		dma_buf_vunmap(dma_buf_info->dmabuf, &new_dma_buf_map);
+		dma_buf_end_cpu_access(dma_buf_info->dmabuf, DMA_BIDIRECTIONAL);
 		goto err;
 	}
 	dma_buf_info->vaddr = new_va;
